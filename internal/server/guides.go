@@ -63,7 +63,6 @@ func (a *App) RunInstallGuide() (bool, error) {
 // RunMetricStoreRecovery keeps login available while exposing only the
 // administrator-protected metric-store recovery API.
 func (a *App) RunMetricStoreRecovery(initialErr error) (bool, error) {
-	a.initOAuth()
 	return a.runGuideServer(recoveryweb.NewController(initialErr, metricStoreReconnectAttempts), guideServerConfig{
 		pagePath:         recoveryweb.PagePath,
 		missingAPI:       "Not found in database recovery mode",
@@ -76,7 +75,6 @@ func (a *App) RunMetricStoreRecovery(initialErr error) (bool, error) {
 // RunDatabaseMigration serves the same authenticated guide and status model
 // for either migration input while leaving each conversion engine independent.
 func (a *App) RunDatabaseMigration(requirement DatabaseMigrationRequirement) (bool, error) {
-	a.initOAuth()
 	var controller guideController
 	switch requirement.mode {
 	case migrationweb.ModeMetricStructure:
