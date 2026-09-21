@@ -74,3 +74,11 @@ jobs:
         with:
           name: komari-1.4.3-test
           path: komari/komari
+
+      - name: Verify Web files
+        run: |
+          test -f komari/web/public/defaultTheme/dist/index.html
+          test -f komari/web/public/defaultTheme/komari-theme.json
+          echo "Web files OK"
+          ls -lah komari/web/public/defaultTheme
+          ls -lah komari/web/public/defaultTheme/dist | head -20
