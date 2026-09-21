@@ -8,60 +8,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 下载你的 Komari 1.4.3 源码
+      # 1. 获取你的 Komari 1.4.3
       - name: Checkout Komari
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: wander44-svg/komari
           ref: komari-1.4.3
           path: komari
 
-      # 下载你的 Komari Web 1.4.3 源码
+      # 2. 获取你的 Komari Web 1.4.3
       - name: Checkout Komari Web
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: wander44-svg/komari-web
           ref: komari-web-1.4.3
           path: komari-web
 
-      # 准备 Node.js
+      # 3. 安装 Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: komari-web/package-lock.json
 
-      # 安装 Web 依赖
+      # 4. 安装 Web 依赖
       - name: Install Web dependencies
         working-directory: komari-web
         run: npm ci
 
-      # 编译 Web
+      # 5. 编译 Web
       - name: Build Web
         working-directory: komari-web
         run: npm run build
 
-      # 把 Web 放进 Komari
-      - name: Copy Web to Komari
+      # 6. 安装 zstd
+      - name: Install zstd
         run: |
-          rm -rf komari/public/dist
-          mkdir -p komari/public/dist
-          cp -r komari-web/dist/* komari/public/dist/
+          sudo apt-get update
+          sudo apt-get install -y zstd
 
-      # 准备 Go
+      # 7. 将 Web dist 打包进 Komari
+      - name: Package Web
+        run: |
+          mkdir -p komari/web/public/defaultTheme
+
+          tar -cf /tmp/komari-dist.tar -C komari-web/dist .
+
+          zstd -19 -T0 \
+            -f /tmp/komari-dist.tar \
+            -o komari/web/public/defaultTheme/dist.tar.zst
+
+          cp komari-web/komari-theme.json \
+            komari/web/public/defaultTheme/
+
+      # 8. 安装 Go
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: komari/go.mod
+          cache: true
+          cache-dependency-path: komari/go.sum
 
-      # 编译 Komari
+      # 9. 编译 Komari
       - name: Build Komari
         working-directory: komari
         run: |
-          go build -o komari
+          CGO_ENABLED=1 go build -o komari
 
-      # 保存编译出来的程序
+      # 10. 保存编译结果
       - name: Upload Komari
         uses: actions/upload-artifact@v4
         with:
