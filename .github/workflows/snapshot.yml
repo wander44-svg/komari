@@ -27,7 +27,7 @@ jobs:
         with:
           fetch-depth: 1
 
-        - name: Ensure snapshot target is komari-optimal
+      - name: Ensure snapshot target is komari-optimal
         run: |
           if [ "${GITHUB_REF}" != "refs/heads/komari-optimal" ]; then
             echo "Snapshot builds must run from refs/heads/komari-optimal. Current ref: ${GITHUB_REF}"
