@@ -10,7 +10,7 @@ inputs:
     default: https://github.com/wander44-svg/komari-web
   ref:
     description: Optional komari-web ref to build. Uses the repository default branch when empty.
-    default: "komari-web-1.4.3"
+    default: "komari-optimal"
   artifact-name:
     description: Optional artifact name for the packed frontend theme.
     default: ""
