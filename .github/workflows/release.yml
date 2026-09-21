@@ -49,24 +49,9 @@ jobs:
 
     strategy:
       matrix:
-        goos: [windows, linux]
-        goarch: [amd64, arm64, 386, riscv64]
+        goos: [linux]
+        goarch: [amd64, arm64]
         include:
-          # Windows
-          - goos: windows
-            goarch: amd64
-            zig_target_triple: x86_64-windows-gnu
-            binary_extension: .exe
-          - goos: windows
-            goarch: arm64
-            zig_target_triple: aarch64-windows-gnu
-            binary_extension: .exe
-          - goos: windows
-            goarch: 386
-            zig_target_triple: x86-windows-gnu
-            binary_extension: .exe
-
-          # Linux
           - goos: linux
             goarch: amd64
             zig_target_triple: x86_64-linux-musl
@@ -75,22 +60,6 @@ jobs:
             goarch: arm64
             zig_target_triple: aarch64-linux-musl
             binary_extension: ""
-          - goos: linux
-            goarch: 386
-            zig_target_triple: x86-linux-musl
-            binary_extension: ""
-          - goos: linux
-            goarch: riscv64
-            zig_target_triple: riscv64-linux-musl
-            binary_extension: ""
-          - goos: linux
-            goarch: loong64
-            zig_target_triple: loongarch64-linux-musl
-            binary_extension: ""
-
-        exclude:
-          - goos: windows
-            goarch: riscv64
 
     steps:
       - name: Checkout code

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - komari-optimal
 
 permissions:
   contents: write
@@ -27,20 +27,20 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Ensure snapshot target is main
+        - name: Ensure snapshot target is komari-optimal
         run: |
-          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
-            echo "Snapshot builds must run from refs/heads/main. Current ref: ${GITHUB_REF}"
+          if [ "${GITHUB_REF}" != "refs/heads/komari-optimal" ]; then
+            echo "Snapshot builds must run from refs/heads/komari-optimal. Current ref: ${GITHUB_REF}"
             exit 1
           fi
 
-          git fetch --no-tags --depth=1 origin main
+          git fetch --no-tags --depth=1 origin komari-optimal
           MAIN_SHA="$(git rev-parse FETCH_HEAD)"
 
           if [ "${GITHUB_SHA}" != "${MAIN_SHA}" ]; then
-            echo "Snapshot builds must use the current main commit."
+            echo "Snapshot builds must use the current komari-optimal commit."
             echo "Workflow SHA: ${GITHUB_SHA}"
-            echo "Current main: ${MAIN_SHA}"
+            echo "Current komari-optimal: ${MAIN_SHA}"
             exit 1
           fi
 
@@ -78,24 +78,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goos: [windows, linux]
-        goarch: [amd64, arm64, 386, riscv64]
+        goos: [linux]
+        goarch: [amd64, arm64]
         include:
-          # Windows
-          - goos: windows
-            goarch: amd64
-            zig_target_triple: x86_64-windows-gnu
-            binary_extension: .exe
-          - goos: windows
-            goarch: arm64
-            zig_target_triple: aarch64-windows-gnu
-            binary_extension: .exe
-          - goos: windows
-            goarch: 386
-            zig_target_triple: x86-windows-gnu
-            binary_extension: .exe
-
-          # Linux
           - goos: linux
             goarch: amd64
             zig_target_triple: x86_64-linux-musl
@@ -104,22 +89,6 @@ jobs:
             goarch: arm64
             zig_target_triple: aarch64-linux-musl
             binary_extension: ""
-          - goos: linux
-            goarch: 386
-            zig_target_triple: x86-linux-musl
-            binary_extension: ""
-          - goos: linux
-            goarch: riscv64
-            zig_target_triple: riscv64-linux-musl
-            binary_extension: ""
-          - goos: linux
-            goarch: loong64
-            zig_target_triple: loongarch64-linux-musl
-            binary_extension: ""
-
-        exclude:
-          - goos: windows
-            goarch: riscv64
 
     steps:
       - name: Checkout code
@@ -168,15 +137,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Ensure commit is still current main
+      - name: Ensure commit is still current komari-optimal
         run: |
-          git fetch --no-tags --depth=1 origin main
+          git fetch --no-tags --depth=1 origin komari-optimal
           MAIN_SHA="$(git rev-parse FETCH_HEAD)"
 
           if [ "${GITHUB_SHA}" != "${MAIN_SHA}" ]; then
-            echo "Snapshot publish skipped because a newer main commit exists."
+            echo "Snapshot publish skipped because a newer komari-optimal commit exists."
             echo "Workflow SHA: ${GITHUB_SHA}"
-            echo "Current main: ${MAIN_SHA}"
+            echo "Current komari-optimal: ${MAIN_SHA}"
             exit 1
           fi
 
@@ -212,7 +181,7 @@ jobs:
 
           gh workflow run generate-release-notes.yml \
             --repo "${{ github.repository }}" \
-            --ref main \
+            --ref komari-optimal \
             -f tag="${VERSION}"
 
           gh release list \
@@ -241,15 +210,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Ensure commit is still current main
+      - name: Ensure commit is still current komari-optimal
         run: |
-          git fetch --no-tags --depth=1 origin main
+          git fetch --no-tags --depth=1 origin komari-optimal
           MAIN_SHA="$(git rev-parse FETCH_HEAD)"
 
           if [ "${GITHUB_SHA}" != "${MAIN_SHA}" ]; then
-            echo "Snapshot Docker publish skipped because a newer main commit exists."
+            echo "Snapshot Docker publish skipped because a newer komari-optimal commit exists."
             echo "Workflow SHA: ${GITHUB_SHA}"
-            echo "Current main: ${MAIN_SHA}"
+            echo "Current komari-optimal: ${MAIN_SHA}"
             exit 1
           fi
 
