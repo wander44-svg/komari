@@ -42,16 +42,17 @@ jobs:
         working-directory: komari-web
         run: npm run build
 
-      # 6. 按 Komari 1.4.3 的旧结构放置 Web
+      # 6. 按 Komari 1.4.3 的结构放置 Web
       - name: Package Web
         run: |
-          mkdir -p komari/web/public/default/dist
+          rm -rf komari/web/public/defaultTheme
+          mkdir -p komari/web/public/defaultTheme/dist
 
           cp -r komari-web/dist/* \
-            komari/web/public/default/dist/
+            komari/web/public/defaultTheme/dist/
 
           cp komari-web/komari-theme.json \
-            komari/web/public/default/
+            komari/web/public/defaultTheme/
 
       # 8. 安装 Go
       - name: Setup Go
