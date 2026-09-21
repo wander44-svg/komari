@@ -6,7 +6,6 @@ import (
 	"github.com/komari-monitor/komari/web/api/admin"
 	"github.com/komari-monitor/komari/web/api/client"
 	public_api "github.com/komari-monitor/komari/web/api/public"
-	"github.com/komari-monitor/komari/web/api/terminal"
 	"github.com/komari-monitor/komari/web/public"
 	jsonRpc "github.com/komari-monitor/komari/web/rpc/jsonrpc"
 )
@@ -34,10 +33,6 @@ func registerPublicRoutes(r *gin.Engine) {
 	// 非 JSON / 特殊流程，保留 REST handler。
 	r.POST("/api/login", public_api.Login)
 	r.GET("/api/logout", public_api.Logout)
-	r.GET("/api/oauth", public_api.OAuth)
-	r.GET("/api/oauth_callback", public_api.OAuthCallback)
-	// 插件公开页面（visibility=public 的 iframe 页面），无需鉴权。
-	r.GET("/api/plugin/:short/*filepath", public_api.ServePluginFile)
 	// /api/clients 是 WebSocket 端点（客户端发 "get"/"get <uuid>" 拉取在线列表与最新上报），
 	// 非 JSON-RPC，保留为 WS handler。
 	r.GET("/api/clients", api.GetClients)
@@ -59,21 +54,12 @@ func registerPublicRoutes(r *gin.Engine) {
 
 // registerAgentRoutes agent（客户端）上报与拉取路由。
 func registerAgentRoutes(r *gin.Engine) {
-	// AutoDiscovery 注册使用独立的 Authorization key 鉴权，保留 REST handler。
-	r.POST("/api/clients/register", client.RegisterClient)
-
 	tokenAuthorized := r.Group("/api/clients", api.RequireRole(api.RoleAdmin, api.RoleClient))
 	{
-		// 上报类（WS / 原始流 / 兼容协议）保留 REST handler。
-		tokenAuthorized.GET("/report", client.WebSocketReport)
-		tokenAuthorized.POST("/uploadBasicInfo", client.UploadBasicInfo)
-		tokenAuthorized.POST("/report", client.UploadReport)
 		tokenAuthorized.GET("/v2/rpc", client.WebSocketV2RPC)
 		tokenAuthorized.POST("/v2/rpc", client.UploadV2RPC)
-		tokenAuthorized.GET("/terminal", terminal.EstablishConnection)
 
 		// JSON 接口 -> RPC2 (client: 命名空间)。
-		tokenAuthorized.POST("/task/result", jsonRpc.Bind("client:taskResult", jsonRpc.WithRaw()))
 		tokenAuthorized.GET("/ping/tasks", jsonRpc.Bind("client:getPingTasks", jsonRpc.WithRaw()))
 		tokenAuthorized.POST("/ping/result", jsonRpc.Bind("client:uploadPingResult", jsonRpc.WithRaw()))
 	}
@@ -85,15 +71,6 @@ func registerAdminRoutes(r *gin.Engine) {
 	admin.RegisterPprofRoutes(g)
 
 	// --- 二进制/流/重定向类，保留 REST handler ---
-	g.GET("/download/backup", admin.DownloadBackup)
-	uploadHandler := admin.NewArchiveUploadHandler()
-	uploadGroup := g.Group("/upload")
-	{
-		uploadGroup.POST("/init", uploadHandler.Init)
-		uploadGroup.POST("/chunk", uploadHandler.Chunk)
-		uploadGroup.POST("/merge", uploadHandler.Merge)
-		uploadGroup.POST("/cancel", uploadHandler.Cancel)
-	}
 	g.GET("/test/geoip", jsonRpc.Bind("admin:testGeoip", jsonRpc.WithQuery("ip")))
 	g.POST("/test/sendMessage", jsonRpc.Bind("admin:testSendMessage"))
 	g.POST("/update/mmdb", admin.UpdateMmdbGeoIP)
@@ -126,35 +103,13 @@ func registerAdminRoutes(r *gin.Engine) {
 		twoFactor.POST("/disable", api.RequireSensitive2FA(), admin.Disable2FA)
 	}
 
-	// oauth2 绑定走重定向，保留 REST handler。
-	oauth2 := g.Group("/oauth2")
-	{
-		oauth2.GET("/bind", admin.BindingExternalAccount)
-		oauth2.POST("/unbind", admin.UnbindExternalAccount)
-	}
-
 	// --- 以下全部 JSON -> RPC2 ---
-
-	// tasks（远程执行）
-	task := g.Group("/task")
-	{
-		task.GET("/all", jsonRpc.Bind("admin:getTasks"))
-		task.POST("/exec", api.RequireSensitive2FA(), jsonRpc.Bind("admin:exec"))
-		task.GET("/:task_id", jsonRpc.Bind("admin:getTaskById", jsonRpc.WithPath("task_id")))
-		task.GET("/:task_id/result", jsonRpc.Bind("admin:getTaskResultsByTaskId", jsonRpc.WithPath("task_id")))
-		task.GET("/:task_id/result/:uuid", jsonRpc.Bind("admin:getSpecificTaskResult", jsonRpc.WithPath("task_id", "uuid")))
-		task.GET("/client/:uuid", jsonRpc.Bind("admin:getTasksByClientId", jsonRpc.WithPath("uuid")))
-	}
 
 	// settings
 	settings := g.Group("/settings")
 	{
 		settings.GET("/", jsonRpc.Bind("admin:getSettings"))
 		settings.POST("/", jsonRpc.Bind("admin:editSettings"))
-		settings.GET("/xtermjs", jsonRpc.Bind("admin:getXtermjsSettings"))
-		settings.POST("/xtermjs", jsonRpc.Bind("admin:setXtermjsSettings", jsonRpc.WithMessage("settings saved")))
-		settings.POST("/oidc", jsonRpc.Bind("admin:setOidcProvider"))
-		settings.GET("/oidc", jsonRpc.Bind("admin:getOidcProvider", jsonRpc.WithQuery("provider")))
 		settings.POST("/message-sender", jsonRpc.Bind("admin:setMessageSenderProvider"))
 		settings.GET("/message-sender", jsonRpc.Bind("admin:getMessageSenderProvider", jsonRpc.WithQuery("provider")))
 	}
@@ -176,7 +131,6 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.POST("/:uuid/remove", jsonRpc.Bind("admin:removeClient", jsonRpc.WithPath("uuid")))
 		clientGroup.GET("/:uuid/token", jsonRpc.Bind("admin:getClientToken", jsonRpc.WithPath("uuid"), jsonRpc.WithFlat()))
 		clientGroup.POST("/order", jsonRpc.Bind("admin:orderClients"))
-		clientGroup.GET("/:uuid/terminal", api.RequireSensitive2FA(), terminal.RequestTerminal)
 	}
 
 	// records
@@ -196,35 +150,6 @@ func registerAdminRoutes(r *gin.Engine) {
 
 	g.GET("/logs", jsonRpc.Bind("admin:getLogs", jsonRpc.WithQuery("limit", "page")))
 
-	// clipboard
-	clipboardGroup := g.Group("/clipboard")
-	{
-		clipboardGroup.GET("/:id", jsonRpc.Bind("admin:getClipboard", jsonRpc.WithPath("id")))
-		clipboardGroup.GET("", jsonRpc.Bind("admin:listClipboard"))
-		clipboardGroup.POST("", jsonRpc.Bind("admin:createClipboard"))
-		clipboardGroup.POST("/:id", jsonRpc.Bind("admin:updateClipboard", jsonRpc.WithPath("id")))
-		clipboardGroup.POST("/remove", jsonRpc.Bind("admin:batchDeleteClipboard"))
-		clipboardGroup.POST("/:id/remove", jsonRpc.Bind("admin:deleteClipboard", jsonRpc.WithPath("id")))
-	}
-
-	// plugins: 安装流程通过统一的分片上传接口，启停/列表/日志走 RPC2，市场对齐主题市场。
-	pluginGroup := g.Group("/plugin")
-	{
-		pluginGroup.GET("/list", jsonRpc.Bind("admin:listPlugins"))
-		pluginGroup.POST("/enabled", jsonRpc.Bind("admin:setPluginEnabled"))
-		pluginGroup.GET("/logs", jsonRpc.Bind("admin:getPluginLogs", jsonRpc.WithQuery("short")))
-		pluginGroup.GET("/market/sources", admin.ListPluginMarketSources)
-		pluginGroup.POST("/market/sources", admin.CreatePluginMarketSource)
-		pluginGroup.PUT("/market/sources/:id", admin.UpdatePluginMarketSource)
-		pluginGroup.DELETE("/market/sources/:id", admin.DeletePluginMarketSource)
-		pluginGroup.GET("/market/catalog", admin.ListPluginMarketCatalog)
-		pluginGroup.POST("/market/install", admin.InstallPluginFromMarket)
-		pluginGroup.POST("/delete", jsonRpc.Bind("admin:deletePlugin"))
-		pluginGroup.GET("/configuration", jsonRpc.Bind("admin:getPluginConfiguration", jsonRpc.WithQuery("short")))
-		pluginGroup.POST("/configuration", jsonRpc.Bind("admin:setPluginConfiguration"))
-		// 插件注入的管理页面静态文件
-		pluginGroup.GET("/:short/*filepath", admin.ServePluginFile)
-	}
 
 	// notifications
 	notificationGroup := g.Group("/notification")

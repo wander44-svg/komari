@@ -53,7 +53,11 @@ func (h *ConsoleHandler) Handle(_ context.Context, record slog.Record) error {
 		fields.WriteByte(' ')
 		fields.WriteString(key)
 		fields.WriteByte('=')
-		fields.WriteString(formatValue(attr.Value))
+		if isSensitiveKey(key) {
+			fields.WriteString("[REDACTED]")
+		} else {
+			fields.WriteString(formatValue(attr.Value))
+		}
 	}
 
 	_, err := fmt.Fprintf(
@@ -63,10 +67,35 @@ func (h *ConsoleHandler) Handle(_ context.Context, record slog.Record) error {
 		levelColor(record.Level),
 		levelName(record.Level),
 		component,
-		record.Message,
+		 redactSecrets(record.Message),
 		fields.String(),
 	)
 	return err
+}
+
+func isSensitiveKey(key string) bool {
+	k := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+	return strings.Contains(k, "token") || strings.Contains(k, "authorization") ||
+		strings.Contains(k, "session") || strings.Contains(k, "cookie") ||
+		strings.Contains(k, "password") || strings.Contains(k, "secret")
+}
+
+func redactSecrets(message string) string {
+	for _, marker := range []string{"Bearer ", "token=", "session_token=", "Authorization: "} {
+		for {
+			idx := strings.Index(strings.ToLower(message), strings.ToLower(marker))
+			if idx < 0 {
+				break
+			}
+			start := idx + len(marker)
+			end := start
+			for end < len(message) && !strings.ContainsRune(" \t\r\n&\"'", rune(message[end])) {
+				end++
+			}
+			message = message[:start] + "[REDACTED]" + message[end:]
+		}
+	}
+	return message
 }
 
 func (h *ConsoleHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

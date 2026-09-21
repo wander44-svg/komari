@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/komari-monitor/komari/internal/config"
 )
 
 func SplitAllowlist(raw string) []string {
@@ -48,14 +46,6 @@ func OriginInAllowlist(origin, rawAllowlist string) bool {
 		}
 	}
 	return false
-}
-
-func IsAPIKeyRequest(r *http.Request) bool {
-	apiKeyConfig, err := config.GetAs[string](config.ApiKeyKey, "")
-	if err != nil || apiKeyConfig == "" || len(apiKeyConfig) < 12 {
-		return false
-	}
-	return r.Header.Get("Authorization") == "Bearer "+apiKeyConfig
 }
 
 func IsAuthorizationPreflight(r *http.Request) bool {

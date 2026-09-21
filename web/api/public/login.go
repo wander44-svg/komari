@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
@@ -22,6 +24,51 @@ type LoginRequest struct {
 
 const sessionCookieMaxAge = 2592000
 
+const (
+	loginWindow = 10 * time.Minute
+	loginMaxFailures = 8
+)
+
+type loginAttempt struct {
+	Failures int
+	ResetAt time.Time
+}
+
+var loginAttempts = struct {
+	sync.Mutex
+	items map[string]loginAttempt
+}{items: make(map[string]loginAttempt)}
+
+func loginRateLimited(ip string) bool {
+	now := time.Now()
+	loginAttempts.Lock()
+	defer loginAttempts.Unlock()
+	a := loginAttempts.items[ip]
+	if a.ResetAt.Before(now) {
+		delete(loginAttempts.items, ip)
+		return false
+	}
+	return a.Failures >= loginMaxFailures
+}
+
+func recordLoginFailure(ip string) {
+	now := time.Now()
+	loginAttempts.Lock()
+	defer loginAttempts.Unlock()
+	a := loginAttempts.items[ip]
+	if a.ResetAt.Before(now) {
+		a = loginAttempt{ResetAt: now.Add(loginWindow)}
+	}
+	a.Failures++
+	loginAttempts.items[ip] = a
+}
+
+func clearLoginFailures(ip string) {
+	loginAttempts.Lock()
+	delete(loginAttempts.items, ip)
+	loginAttempts.Unlock()
+}
+
 func setSessionCookie(c *gin.Context, value string, maxAge int) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "session_token",
@@ -35,6 +82,12 @@ func setSessionCookie(c *gin.Context, value string, maxAge int) {
 }
 
 func Login(c *gin.Context) {
+	clientIP := c.ClientIP()
+	if loginRateLimited(clientIP) {
+		c.Header("Retry-After", "600")
+		api.RespondError(c, http.StatusTooManyRequests, "Too many failed login attempts; try again later")
+		return
+	}
 	DisablePasswordLogin, _ := config.GetAs[bool](config.DisablePasswordLoginKey, false)
 	if DisablePasswordLogin {
 		api.RespondError(c, http.StatusForbidden, "Password login is disabled")
@@ -59,6 +112,7 @@ func Login(c *gin.Context) {
 
 	uuid, success := accounts.CheckPassword(data.Username, data.Password)
 	if !success {
+		recordLoginFailure(clientIP)
 		api.RespondError(c, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
@@ -66,10 +120,12 @@ func Login(c *gin.Context) {
 	user, _ := accounts.GetUserByUUID(uuid)
 	if user.TwoFactor != "" { // 开启了2FA
 		if data.TwoFa == "" {
+			recordLoginFailure(clientIP)
 			api.RespondError(c, http.StatusUnauthorized, "2FA code is required")
 			return
 		}
 		if ok, err := accounts.Verify2Fa(uuid, data.TwoFa); err != nil || !ok {
+			recordLoginFailure(clientIP)
 			api.RespondError(c, http.StatusUnauthorized, "Invalid 2FA code")
 			return
 		}
@@ -81,8 +137,9 @@ func Login(c *gin.Context) {
 		return
 	}
 	setSessionCookie(c, session, sessionCookieMaxAge)
+	clearLoginFailures(clientIP)
 	auditlog.Log(c.ClientIP(), uuid, "logged in (password)", "login")
-	api.RespondSuccess(c, gin.H{"set-cookie": gin.H{"session_token": session}})
+	api.RespondSuccess(c, gin.H{"logged_in": true})
 }
 func Logout(c *gin.Context) {
 	session, _ := c.Cookie("session_token")

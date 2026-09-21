@@ -1,10 +1,7 @@
 package api
 
 import (
-	"bytes"
 	"database/sql"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -26,7 +23,7 @@ const (
 // IdentityMiddleware 统一身份识别中间件，在路由栈最外层运行。
 // 负责识别当前请求者身份（Admin / Client / Guest），并写入 Context。
 // 身份识别统一委托给 IdentifyPrincipal;同时保留旧的 c.Set 键(role/uuid/
-// api_key/session/client_uuid)以兼容现有 handler 与中间件。
+	// session/client_uuid)以兼容现有 handler 与中间件。
 func IdentityMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		p := IdentifyPrincipal(c)
@@ -35,11 +32,6 @@ func IdentityMiddleware() gin.HandlerFunc {
 		// 写入兼容字段。
 		c.Set("role", p.PrimaryRole())
 		switch p.Type {
-		case rpc.PrincipalAPIKey:
-			// 旧逻辑:API Key 时记录裸 key 与固定占位 uuid。
-			apiKey := c.GetHeader("Authorization")
-			c.Set("api_key", apiKey[len("Bearer "):])
-			c.Set("uuid", "00000000-0000-0000-0000-000000000000")
 		case rpc.PrincipalUser:
 			if session, err := c.Cookie("session_token"); err == nil && session != "" {
 				c.Set("session", session)
@@ -53,7 +45,6 @@ func IdentityMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
 // RequireRole 声明式权限校验中间件，仅允许指定角色通过。
 func RequireRole(allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -88,8 +79,6 @@ var publicPaths = []string{
 	"/api/public",
 	"/api/login",
 	"/api/me",
-	"/api/oauth",
-	"/api/oauth_callback",
 	"/api/version",
 	"/api/recent",
 	"/api/admin",    // 由 RequireRole 处理
@@ -165,35 +154,14 @@ func hasTempAccess(c *gin.Context) bool {
 }
 
 func extractClientToken(c *gin.Context) string {
-	token := c.Query("token")
-	if token != "" {
-		return token
+	// Agent credentials are accepted only through the standard Bearer header.
+	// Tokens in URLs or request bodies are intentionally rejected to avoid
+	// leaking credentials through access logs, proxies, and browser history.
+	value := strings.TrimSpace(c.GetHeader("Authorization"))
+	if len(value) < len("Bearer ") || !strings.EqualFold(value[:len("Bearer ")], "Bearer ") {
+		return ""
 	}
-	// rpc2 约定:agent 经 ?Authorization=<token> 传入 client token。
-	if token := c.Query("Authorization"); token != "" {
-		return token
-	}
-
-	if c.Request.Method != http.MethodGet {
-		bodyBytes, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			return ""
-		}
-		c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
-		var bodyMap map[string]interface{}
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
-				if tokenVal, exists := bodyMap["token"]; exists {
-					if str, ok := tokenVal.(string); ok && str != "" {
-						return str
-					}
-				}
-			}
-		}
-	}
-
-	return ""
+	return strings.TrimSpace(value[len("Bearer "):])
 }
 
 func checkTokenAndGetUUID(token string) (string, error) {
@@ -209,16 +177,4 @@ func checkTokenAndGetUUID(token string) (string, error) {
 		return "", err
 	}
 	return uuid, nil
-}
-
-func isApiKeyValid(apiKey string) bool {
-	apiKeyConfig, err := config.GetAs[string](config.ApiKeyKey, "")
-	if err != nil {
-		return false
-	}
-
-	if apiKeyConfig == "" || len(apiKeyConfig) < 12 {
-		return false
-	}
-	return apiKey == "Bearer "+apiKeyConfig
 }

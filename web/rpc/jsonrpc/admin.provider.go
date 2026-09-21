@@ -2,6 +2,7 @@ package jsonrpc
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/komari-monitor/komari/database"
 	"github.com/komari-monitor/komari/database/models"
@@ -17,10 +18,69 @@ import (
 // 消息发送器与 OIDC 提供者配置 RPC2 方法（admin 命名空间）。
 
 func init() {
+	reg("listNotificationChannels", adminListNotificationChannels, "List supported notification channels")
+	reg("getNotificationChannelConfiguration", adminGetNotificationChannelConfiguration, "Get notification channel configuration")
+	reg("setNotificationChannelConfiguration", adminSetNotificationChannelConfiguration, "Set notification channel configuration")
 	reg("getMessageSenderProvider", adminGetMessageSender, "Get message sender provider config or templates")
 	reg("setMessageSenderProvider", adminSetMessageSender, "Set message sender provider config")
 	reg("getOidcProvider", adminGetOidc, "Get OIDC provider config or templates")
 	reg("setOidcProvider", adminSetOidc, "Set OIDC provider config")
+}
+
+const telegramChannel = "telegram"
+
+func telegramConfiguration() map[string]any {
+	configs := msfactory.GetSenderConfigs()
+	return map[string]any{
+		"name": "Telegram",
+		"data": configs[telegramChannel],
+	}
+}
+
+func adminListNotificationChannels(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	return []map[string]any{{
+		"id":            telegramChannel,
+		"configuration": telegramConfiguration(),
+	}}, nil
+}
+
+func adminGetNotificationChannelConfiguration(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	var params struct {
+		ID string `json:"id"`
+	}
+	if err := req.BindParams(&params); err != nil || params.ID != telegramChannel {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Only Telegram notifications are supported", nil)
+	}
+
+	data := map[string]any{}
+	if saved, err := database.GetMessageSenderConfigByName(telegramChannel); err == nil && saved.Addition != "" {
+		if err := json.Unmarshal([]byte(saved.Addition), &data); err != nil {
+			return nil, rpc.MakeError(rpc.InternalError, "Invalid saved Telegram configuration", nil)
+		}
+	}
+	return map[string]any{"configuration": telegramConfiguration(), "data": data}, nil
+}
+
+func adminSetNotificationChannelConfiguration(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	var params struct {
+		ID   string         `json:"id"`
+		Data map[string]any `json:"data"`
+	}
+	if err := req.BindParams(&params); err != nil || params.ID != telegramChannel {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Only Telegram notifications are supported", nil)
+	}
+	addition, err := json.Marshal(params.Data)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid Telegram configuration", nil)
+	}
+	provider := &models.MessageSenderProvider{Name: telegramChannel, Addition: string(addition)}
+	if err := database.SaveMessageSenderConfig(provider); err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "Failed to save Telegram configuration: "+err.Error(), nil)
+	}
+	if err := messageSender.LoadProvider(telegramChannel, provider.Addition); err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "Failed to load Telegram configuration: "+err.Error(), nil)
+	}
+	return map[string]any{"message": "Telegram configuration saved"}, nil
 }
 
 func adminGetMessageSender(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

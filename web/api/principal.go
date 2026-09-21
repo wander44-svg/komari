@@ -3,7 +3,7 @@ package api
 // principal.go
 // 统一身份识别。IdentifyPrincipal 是全局唯一的主体识别入口,替代此前散落在
 // IdentityMiddleware / transport.detectPermissionGroup / transport.buildContextMeta
-// 三处的重复逻辑。识别优先级:API Key > Session(用户) > Client Token(agent) > 匿名。
+// 三处的重复逻辑。识别优先级:Session(用户) > Client Token(agent) > 匿名。
 
 import (
 	"github.com/gin-gonic/gin"
@@ -15,28 +15,23 @@ import (
 const principalContextKey = "principal"
 
 // IdentifyPrincipal 识别当前请求的调用主体。不写入任何状态,可安全多次调用。
-// 识别优先级与历史 IdentityMiddleware 一致:API Key > Session > Client Token > 匿名。
+// 识别优先级:Session > Client Token > 匿名。
 func IdentifyPrincipal(c *gin.Context) *rpc.Principal {
-	// 1. API Key(Authorization: Bearer <key>)
-	if isApiKeyValid(c.GetHeader("Authorization")) {
-		return rpc.NewAPIKeyPrincipal()
-	}
-
-	// 2. Session(管理员用户)
+	// 1. Session(管理员用户)
 	if session, err := c.Cookie("session_token"); err == nil && session != "" {
 		if uuid, err := accounts.GetSession(session); err == nil && uuid != "" {
 			return rpc.NewUserPrincipal(uuid)
 		}
 	}
 
-	// 3. Client Token(agent 客户端)
+	// 2. Client Token(agent 客户端)
 	if token := extractClientToken(c); token != "" {
 		if uuid, err := checkTokenAndGetUUID(token); err == nil && uuid != "" {
 			return rpc.NewAgentPrincipal(uuid)
 		}
 	}
 
-	// 4. 匿名访客
+	// 3. 匿名访客
 	return rpc.NewAnonymousPrincipal()
 }
 
