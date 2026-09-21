@@ -7,10 +7,10 @@ inputs:
     default: "23"
   repository:
     description: komari-web repository URL.
-    default: https://github.com/komari-monitor/komari-web
+    default: https://github.com/wander44-svg/komari-web
   ref:
     description: Optional komari-web ref to build. Uses the repository default branch when empty.
-    default: ""
+    default: "komari-web-1.4.3"
   artifact-name:
     description: Optional artifact name for the packed frontend theme.
     default: ""
