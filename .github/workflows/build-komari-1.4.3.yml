@@ -1,0 +1,69 @@
+name: Build Komari 1.4.3
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 下载你的 Komari 1.4.3 源码
+      - name: Checkout Komari
+        uses: actions/checkout@v4
+        with:
+          repository: wander44-svg/komari
+          ref: komari-1.4.3
+          path: komari
+
+      # 下载你的 Komari Web 1.4.3 源码
+      - name: Checkout Komari Web
+        uses: actions/checkout@v4
+        with:
+          repository: wander44-svg/komari-web
+          ref: komari-web-1.4.3
+          path: komari-web
+
+      # 准备 Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: komari-web/package-lock.json
+
+      # 安装 Web 依赖
+      - name: Install Web dependencies
+        working-directory: komari-web
+        run: npm ci
+
+      # 编译 Web
+      - name: Build Web
+        working-directory: komari-web
+        run: npm run build
+
+      # 把 Web 放进 Komari
+      - name: Copy Web to Komari
+        run: |
+          rm -rf komari/public/dist
+          mkdir -p komari/public/dist
+          cp -r komari-web/dist/* komari/public/dist/
+
+      # 准备 Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: komari/go.mod
+
+      # 编译 Komari
+      - name: Build Komari
+        working-directory: komari
+        run: |
+          go build -o komari
+
+      # 保存编译出来的程序
+      - name: Upload Komari
+        uses: actions/upload-artifact@v4
+        with:
+          name: komari-1.4.3-test
+          path: komari/komari
