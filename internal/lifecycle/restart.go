@@ -5,7 +5,10 @@ package lifecycle
 // RestartReason identifies why the current process must restart.
 type RestartReason string
 
-const RestartForMetricStoreStructureUpgrade RestartReason = "metric-store-structure-upgrade"
+const (
+	RestartForMetricStoreStructureUpgrade RestartReason = "metric-store-structure-upgrade"
+	RestartForPanelSettings              RestartReason = "panel-settings"
+)
 
 var restartRequests = make(chan RestartReason, 1)
 

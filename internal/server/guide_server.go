@@ -62,7 +62,13 @@ func (a *App) runGuideServer(controller guideController, cfg guideServerConfig) 
 	serverErr := make(chan error, 1)
 	logger.Infof("server", cfg.logMessage, a.listenAddr)
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if a.tlsCertFile != "" {
+			err = server.ListenAndServeTLS(a.tlsCertFile, a.tlsKeyFile)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()

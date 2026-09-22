@@ -90,7 +90,13 @@ func (a *App) Run() error {
 	serverErr := make(chan error, 1)
 	logger.Infof("server", "Starting server on %s ...", a.listenAddr)
 	go func() {
-		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if a.tlsCertFile != "" {
+			err = a.server.ListenAndServeTLS(a.tlsCertFile, a.tlsKeyFile)
+		} else {
+			err = a.server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()

@@ -18,6 +18,8 @@ type cleanupFunc struct {
 // bootstrap, metric store, providers, guides, router, and runtime.
 type App struct {
 	listenAddr              string
+	tlsCertFile             string
+	tlsKeyFile              string
 	settings                *config.Settings
 	engine                  *gin.Engine
 	server                  *http.Server

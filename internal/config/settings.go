@@ -6,6 +6,9 @@ type Settings struct {
 	ID                     uint   `json:"id,omitempty"`                                        // 1
 	Sitename               string `json:"sitename" default:"Komari"`                           // 站点名称，默认 "Komari"
 	Description            string `json:"description" default:"A simple server monitor tool."` // 站点描述
+	PanelListenPort        int    `json:"panel_listen_port"`                                      // 面板监听端口
+	PanelTLSCertFile       string `json:"panel_tls_cert_file" default:""`                       // HTTPS 证书路径
+	PanelTLSKeyFile        string `json:"panel_tls_key_file" default:""`                       // HTTPS 私钥路径
 	CorsOriginCheckEnabled bool   `json:"cors_origin_check_enabled" default:"true"`            // 是否启用 API CORS 跨域请求校验，默认 true
 	CorsAllowedOrigins     string `json:"cors_allowed_origins" default:""`                     // API 跨域允许列表
 	WsOriginCheckEnabled   bool   `json:"ws_origin_check_enabled" default:"true"`              // 是否校验 WebSocket Origin
@@ -44,6 +47,9 @@ type Settings struct {
 const (
 	SitenameKey               = "sitename"
 	DescriptionKey            = "description"
+	PanelListenPortKey        = "panel_listen_port"
+	PanelTLSCertFileKey       = "panel_tls_cert_file"
+	PanelTLSKeyFileKey        = "panel_tls_key_file"
 	CorsOriginCheckEnabledKey = "cors_origin_check_enabled"
 	CorsAllowedOriginsKey     = "cors_allowed_origins"
 	WsOriginCheckEnabledKey   = "ws_origin_check_enabled"

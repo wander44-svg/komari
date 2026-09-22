@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -127,10 +128,25 @@ var metricStoreConfigKeys = map[string]struct{}{
 	metricstore.MetricRollupHourRetentionHoursKey:         {},
 }
 
+var panelConfigKeys = map[string]struct{}{
+	config.PanelListenPortKey:  {},
+	config.PanelTLSCertFileKey: {},
+	config.PanelTLSKeyFileKey:  {},
+}
+
 // metricKeysTouched 判断本次设置变更是否涉及 metrics 数据库相关键。
 func metricKeysTouched(cfg map[string]interface{}) bool {
 	for key := range cfg {
 		if _, ok := metricStoreConfigKeys[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func panelKeysTouched(cfg map[string]interface{}) bool {
+	for key := range cfg {
+		if _, ok := panelConfigKeys[key]; ok {
 			return true
 		}
 	}
@@ -143,6 +159,9 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid or missing request body: "+err.Error(), nil)
 	}
 	removeRetiredLowResourceMode(cfg)
+	if err := validatePanelSettingChanges(cfg); err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
+	}
 	if err := validateMetricRollupSettingChanges(cfg); err != nil {
 		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
 	}
@@ -176,6 +195,7 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		}
 		cancel()
 	}
+	touchedPanel := panelKeysTouched(cfg)
 
 	if err := config.SetMany(cfg); err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to update settings: "+err.Error(), nil)
@@ -200,9 +220,80 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		}
 		cancel()
 	}
+	if touchedPanel {
+		auditSettingsUpdate(ctx, cfg)
+		lifecycle.RequestRestart(lifecycle.RestartForPanelSettings)
+		return map[string]any{"restart_required": true}, nil
+	}
 
 	auditSettingsUpdate(ctx, cfg)
 	return nil, nil
+}
+
+func validatePanelSettingChanges(cfg map[string]interface{}) error {
+	if value, ok := cfg[config.PanelListenPortKey]; ok {
+		port, ok := settingInt(value)
+		if !ok || port < 1 || port > 65535 {
+			return fmt.Errorf("%s must be an integer between 1 and 65535", config.PanelListenPortKey)
+		}
+	}
+
+	cert, certSet := cfg[config.PanelTLSCertFileKey]
+	key, keySet := cfg[config.PanelTLSKeyFileKey]
+	if certSet || keySet {
+		currentCert, _ := config.GetAs[string](config.PanelTLSCertFileKey, "")
+		currentKey, _ := config.GetAs[string](config.PanelTLSKeyFileKey, "")
+		certValue := currentCert
+		keyValue := currentKey
+		if certSet {
+			var ok bool
+			certValue, ok = cert.(string)
+			if !ok {
+				return fmt.Errorf("%s must be a string", config.PanelTLSCertFileKey)
+			}
+		}
+		if keySet {
+			var ok bool
+			keyValue, ok = key.(string)
+			if !ok {
+				return fmt.Errorf("%s must be a string", config.PanelTLSKeyFileKey)
+			}
+		}
+		if (strings.TrimSpace(certValue) == "") != (strings.TrimSpace(keyValue) == "") {
+			return fmt.Errorf("panel TLS certificate and key paths must be configured together")
+		}
+		if strings.TrimSpace(certValue) != "" {
+			for _, path := range []string{strings.TrimSpace(certValue), strings.TrimSpace(keyValue)} {
+				info, err := os.Stat(path)
+				if err != nil {
+					return fmt.Errorf("panel TLS file %q is not accessible: %w", path, err)
+				}
+				if info.IsDir() {
+					return fmt.Errorf("panel TLS path %q is a directory", path)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func settingInt(value any) (int, bool) {
+	switch value := value.(type) {
+	case int:
+		return value, true
+	case int64:
+		return int(value), true
+	case float64:
+		if math.Trunc(value) != value {
+			return 0, false
+		}
+		return int(value), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func auditSettingsUpdate(ctx context.Context, cfg map[string]interface{}) {
