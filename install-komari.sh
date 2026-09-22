@@ -34,8 +34,9 @@ DATA_BACKUP_DIR="$DATA_DIR/data/backup"
 DEFAULT_PORT="25774"
 LISTEN_PORT=""
 REPO="wander44-svg/komari"
-# 发布通道: stable（稳定版）或 snapshot（快照版）
-CHANNEL="stable"
+# 发布通道: stable（稳定版）或 snapshot（快照版）。
+# optimal 分支默认使用最新 Snapshot，避免安装器回退到旧的 stable Release。
+CHANNEL="${KOMARI_CHANNEL:-snapshot}"
 # TUI 工具: whiptail / dialog / 空（回退纯文本）
 TUI_TOOL=""
 
@@ -174,14 +175,14 @@ show_banner() {
 select_channel() {
     local choice
     choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
-        "stable" "稳定版 (推荐)" \
-        "snapshot" "快照版 (最新功能)")
+        "snapshot" "快照版 (最新功能，推荐)" \
+        "stable" "稳定版")
 
     case "$choice" in
-        snapshot|2)
+        snapshot|1|"")
             CHANNEL="snapshot"
             ;;
-        stable|1|"")
+        stable|2)
             CHANNEL="stable"
             ;;
         *)
