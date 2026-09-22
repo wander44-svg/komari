@@ -173,7 +173,7 @@ show_banner() {
     clear
     echo "=============================================================="
     echo "            Komari Monitoring System Installer"
-    echo "       https://github.com/komari-monitor/komari"
+    echo "       https://github.com/wander44-svg/komari"
     echo "=============================================================="
     echo
 }
