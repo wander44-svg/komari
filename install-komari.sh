@@ -174,19 +174,23 @@ show_banner() {
 # 选择发布通道，结果写入全局变量 CHANNEL
 select_channel() {
     local choice
-    choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
+    if ! choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
         "snapshot" "快照版 (最新功能，推荐)" \
-        "stable" "稳定版")
+        "stable" "稳定版"); then
+        log_info "发布通道选择已取消"
+        return 1
+    fi
 
     case "$choice" in
-        snapshot|1|"")
+        snapshot|1)
             CHANNEL="snapshot"
             ;;
         stable|2)
             CHANNEL="stable"
             ;;
         *)
-            CHANNEL="stable"
+            log_info "发布通道选择已取消"
+            return 1
             ;;
     esac
     log_info "已选择通道: $CHANNEL"
@@ -307,7 +311,10 @@ install_binary() {
     fi
 
     # 选择发布通道
-    select_channel
+    if ! select_channel; then
+        log_info "安装已取消"
+        return 0
+    fi
 
     # 监听端口输入，校验范围 1-65535
     while true; do
@@ -457,7 +464,10 @@ upgrade_komari() {
     fi
 
     # 选择发布通道
-    select_channel
+    if ! select_channel; then
+        log_info "升级已取消"
+        return 0
+    fi
 
     log_step "停止 Komari 服务..."
     systemctl stop ${SERVICE_NAME}.service
