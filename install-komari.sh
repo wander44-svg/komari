@@ -74,7 +74,8 @@ ui_menu() {
     local prompt="$1"; shift
 
     if tui_enabled; then
-        $TUI_TOOL --title "$title" --menu "$prompt" 20 70 10 "$@" 3>&1 1>&2 2>&3
+        # Leave enough rows for the complete fixed main menu so no scrollbar is shown.
+        $TUI_TOOL --title "$title" --menu "$prompt" 24 78 12 "$@" 3>&1 1>&2 2>&3
         return $?
     fi
 
@@ -181,18 +182,18 @@ show_banner() {
 select_channel() {
     local choice
     if ! choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
-        "snapshot" "快照版 (最新功能，推荐)" \
-        "stable" "稳定版"); then
+        "stable" "stable 稳定版" \
+        "snapshot" "snapshot 测试版"); then
         log_info "发布通道选择已取消"
         return 1
     fi
 
     case "$choice" in
-        snapshot|1)
-            CHANNEL="snapshot"
-            ;;
-        stable|2)
+        stable|1)
             CHANNEL="stable"
+            ;;
+        snapshot|2)
+            CHANNEL="snapshot"
             ;;
         *)
             log_info "发布通道选择已取消"
@@ -309,40 +310,51 @@ get_download_url() {
 
 # Binary installation
 install_binary() {
-    log_step "开始二进制安装..."
-
+    local replacing=0
+    local backup_path=""
     if is_installed; then
-        ui_msgbox "提示" "Komari 已安装。\n如需升级，请使用主菜单中的升级选项。"
-        return
+        replacing=1
+        log_step "覆盖现有 Komari 安装，保留数据目录..."
+    else
+        log_step "开始二进制安装..."
     fi
 
-    # 选择发布通道
-    if ! select_channel; then
+    # 选择发布通道，整合菜单入口时可由调用方预先选择。
+    if [ "${1:-}" != "--channel-selected" ] && ! select_channel; then
         log_info "安装已取消"
         return 0
     fi
 
-    # 监听端口输入，校验范围 1-65535
-    while true; do
-        local input_port
-        input_port=$(ui_input "监听端口" "请输入 Komari 的监听端口 (1-65535)：" "$DEFAULT_PORT")
-        # 取消输入
-        if [ $? -ne 0 ]; then
-            log_info "安装已取消"
-            return
-        fi
-        if [[ -z "$input_port" ]]; then
-            LISTEN_PORT="$DEFAULT_PORT"
-            break
-        elif [[ "$input_port" =~ ^[0-9]+$ ]] && (( input_port >= 1 && input_port <= 65535 )); then
-            LISTEN_PORT="$input_port"
-            break
-        else
-            ui_msgbox "错误" "端口号无效，请输入 1-65535 之间的数字。"
-        fi
-    done
+    if [ "$replacing" -eq 0 ]; then
+        # 首次安装时选择监听端口；覆盖安装保留已有面板设置和服务配置。
+        while true; do
+            local input_port
+            input_port=$(ui_input "监听端口" "请输入 Komari 的监听端口 (1-65535)：" "$DEFAULT_PORT")
+            # 取消输入
+            if [ $? -ne 0 ]; then
+                log_info "安装已取消"
+                return
+            fi
+            if [[ -z "$input_port" ]]; then
+                LISTEN_PORT="$DEFAULT_PORT"
+                break
+            elif [[ "$input_port" =~ ^[0-9]+$ ]] && (( input_port >= 1 && input_port <= 65535 )); then
+                LISTEN_PORT="$input_port"
+                break
+            else
+                ui_msgbox "错误" "端口号无效，请输入 1-65535 之间的数字。"
+            fi
+        done
+    else
+        LISTEN_PORT="$DEFAULT_PORT"
+    fi
 
     install_dependencies
+
+    if [ "$replacing" -eq 1 ] && check_systemd; then
+        log_step "停止现有 Komari 服务..."
+        systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
+    fi
 
     local arch=$(detect_arch)
     log_info "检测到架构: $arch"
@@ -353,8 +365,10 @@ install_binary() {
     log_step "创建数据目录: $DATA_DIR"
     mkdir -p "$DATA_DIR"
 
-    local download_url=$(get_download_url "$arch")
+    local download_url
+    download_url=$(get_download_url "$arch")
     if [ $? -ne 0 ]; then
+        check_systemd && [ "$replacing" -eq 1 ] && systemctl start "${SERVICE_NAME}.service" 2>/dev/null || true
         ui_msgbox "错误" "获取下载链接失败，请检查网络连接或稍后重试。"
         return 1
     fi
@@ -362,12 +376,25 @@ install_binary() {
     log_step "下载 Komari 二进制文件..."
     log_info "URL: $download_url"
 
-    if ! curl -L -o "$BINARY_PATH" "$download_url"; then
+    local staged_binary="${BINARY_PATH}.download.$$"
+    if ! curl -fL -o "$staged_binary" "$download_url"; then
+        rm -f "$staged_binary"
+        check_systemd && [ "$replacing" -eq 1 ] && systemctl start "${SERVICE_NAME}.service" 2>/dev/null || true
         ui_msgbox "错误" "下载失败，请检查网络连接。"
         return 1
     fi
 
-    chmod +x "$BINARY_PATH"
+    chmod +x "$staged_binary"
+    if [ "$replacing" -eq 1 ]; then
+        backup_path="${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
+        if ! cp "$BINARY_PATH" "$backup_path"; then
+            rm -f "$staged_binary"
+            check_systemd && systemctl start "${SERVICE_NAME}.service" 2>/dev/null || true
+            ui_msgbox "错误" "备份现有 Komari 二进制文件失败，安装已取消。"
+            return 1
+        fi
+    fi
+    mv -f "$staged_binary" "$BINARY_PATH"
     log_success "Komari 二进制文件安装完成: $BINARY_PATH"
 
     if ! check_systemd; then
@@ -375,7 +402,12 @@ install_binary() {
         return
     fi
 
-    create_systemd_service "$LISTEN_PORT"
+    local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+    if [ "$replacing" -eq 0 ] || [ ! -f "$service_file" ]; then
+        create_systemd_service "$LISTEN_PORT"
+    else
+        log_info "保留现有 systemd 服务、面板端口和证书设置"
+    fi
 
     systemctl daemon-reload
     systemctl enable ${SERVICE_NAME}.service
@@ -383,9 +415,17 @@ install_binary() {
 
     if systemctl is-active --quiet ${SERVICE_NAME}.service; then
         log_success "Komari 服务启动成功"
-
-        show_access_info "$LISTEN_PORT"
+        if [ "$replacing" -eq 1 ]; then
+            ui_msgbox "覆盖安装完成" "Komari 已按 $CHANNEL 通道覆盖安装。\n\n原有数据、面板端口、证书路径和 systemd 服务配置均已保留。"
+        else
+            show_access_info "$LISTEN_PORT"
+        fi
     else
+        if [ -n "$backup_path" ] && [ -f "$backup_path" ]; then
+            log_error "新版本服务启动失败，正在恢复原有二进制文件..."
+            mv -f "$backup_path" "$BINARY_PATH"
+            systemctl start "${SERVICE_NAME}.service" 2>/dev/null || true
+        fi
         ui_msgbox "错误" "Komari 服务启动失败。\n\n查看日志: journalctl -u ${SERVICE_NAME} -f"
         return 1
     fi
@@ -455,82 +495,20 @@ cleanup_backups() {
     ui_msgbox "清理完成" "升级历史备份已清理。\n\n清理范围：\n  二进制备份: ${BINARY_PATH}.backup.*\n  数据压缩包: $BACKUP_DIR\n  数据压缩包: $DATA_BACKUP_DIR"
 }
 
-# Upgrade function
-upgrade_komari() {
-    log_step "升级 Komari..."
-
-    if ! is_installed; then
-        ui_msgbox "错误" "Komari 未安装。请先安装它。"
-        return 1
-    fi
-
-    if ! check_systemd; then
-        ui_msgbox "错误" "未检测到 systemd。无法管理服务。"
-        return 1
-    fi
-
-    # 选择发布通道
-    if ! select_channel; then
-        log_info "升级已取消"
-        return 0
-    fi
-
-    log_step "停止 Komari 服务..."
-    systemctl stop ${SERVICE_NAME}.service
-
-    log_step "清理旧的二进制备份..."
-    rm -f -- "${BINARY_PATH}.backup."*
-
-    local backup_path="${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
-    log_step "备份当前二进制文件..."
-    if ! cp "$BINARY_PATH" "$backup_path"; then
-        log_error "备份当前二进制文件失败，正在启动服务"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "错误" "备份当前二进制文件失败，升级已取消。"
-        return 1
-    fi
-
-    local arch=$(detect_arch)
-    local download_url=$(get_download_url "$arch")
-    if [ $? -ne 0 ]; then
-        log_error "获取下载链接失败，正在从备份恢复"
-        mv "$backup_path" "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "错误" "获取下载链接失败，已从备份恢复。"
-        return 1
-    fi
-
-    log_step "下载最新版本..."
-    if ! curl -L -o "$BINARY_PATH" "$download_url"; then
-        log_error "下载失败，正在从备份恢复"
-        mv "$backup_path" "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "错误" "下载失败，已从备份恢复。"
-        return 1
-    fi
-
-    chmod +x "$BINARY_PATH"
-
-    log_step "重启 Komari 服务..."
-    systemctl start ${SERVICE_NAME}.service
-
-    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
-        ui_msgbox "升级完成" "Komari 升级成功 (通道: $CHANNEL)。"
-    else
-        ui_msgbox "错误" "服务在升级后未能启动，请检查日志。"
-    fi
-}
-
 # Uninstall function
 uninstall_komari() {
     log_step "卸载 Komari..."
 
-    if ! is_installed; then
+    local has_service=0
+    if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+        has_service=1
+    fi
+    if ! is_installed && [ "$has_service" -eq 0 ] && [ ! -e "$COMMAND_PATH" ] && [ ! -e "$INSTALLER_PATH" ]; then
         ui_msgbox "提示" "Komari 未安装。"
         return 0
     fi
 
-    if ! ui_yesno "确认卸载" "这将删除 Komari 二进制文件和服务。\n\n您确定要继续吗？"; then
+    if ! ui_yesno "确认卸载" "这将删除 Komari 二进制文件、服务和 komari 唤起命令。\n\n数据目录会保留，您确定要继续吗？"; then
         log_info "卸载已取消"
         return 0
     fi
@@ -555,6 +533,11 @@ uninstall_komari() {
     rmdir "$(dirname "$INSTALLER_PATH")" 2>/dev/null || true
 
     ui_msgbox "卸载完成" "Komari 卸载完成。\n\n数据文件保留在 $DATA_DIR\nkomari 命令已删除，如需重新安装请再次运行远程安装命令。"
+
+    # The command and installer copy are removed above; leave this menu as well.
+    # A later `komari` invocation must only be possible after reinstalling.
+    tui_enabled && clear
+    exit 0
 }
 
 # Show service status
@@ -628,6 +611,21 @@ stop_service() {
     log_step "停止 Komari 服务..."
     systemctl stop ${SERVICE_NAME}.service
     ui_msgbox "成功" "服务已停止。"
+}
+
+# Install or overwrite using the release channel selected in the submenu.
+install_selected_channel() {
+    if ! select_channel; then
+        log_info "操作已取消"
+        return 0
+    fi
+
+    if is_installed; then
+        log_step "按所选通道覆盖安装 Komari (当前通道: $CHANNEL)..."
+    else
+        log_step "按所选通道安装 Komari (当前通道: $CHANNEL)..."
+    fi
+    install_binary --channel-selected
 }
 
 # Uninstall Komari Agent and remove its service and logs.
@@ -733,16 +731,15 @@ main_menu() {
         local choice
         choice=$(ui_menu "Komari 监控系统安装器" "请选择操作：" \
             "1" "安装 Komari" \
-            "2" "升级 Komari" \
-            "3" "卸载 Komari" \
-            "4" "卸载 Komari Agent" \
-            "5" "删除 Komari 数据" \
-            "6" "查看状态" \
-            "7" "查看日志" \
-            "8" "重启服务" \
-            "9" "停止服务" \
-            "10" "清理升级历史备份" \
-            "11" "退出")
+            "2" "卸载 Komari" \
+            "3" "卸载 Komari Agent" \
+            "4" "删除 Komari 数据" \
+            "5" "查看状态" \
+            "6" "查看日志" \
+            "7" "重启服务" \
+            "8" "停止服务" \
+            "9" "清理升级历史备份" \
+            "10" "退出")
 
         # 用户在 TUI 中取消（ESC/Cancel）则退出
         if [ $? -ne 0 ] && tui_enabled; then
@@ -751,17 +748,16 @@ main_menu() {
         fi
 
         case $choice in
-            1) install_binary ;;
-            2) upgrade_komari ;;
-            3) uninstall_komari ;;
-            4) uninstall_agent ;;
-            5) delete_komari_data ;;
-            6) show_status ;;
-            7) show_logs ;;
-            8) restart_service ;;
-            9) stop_service ;;
-            10) cleanup_backups ;;
-            11)
+            1) install_selected_channel ;;
+            2) uninstall_komari ;;
+            3) uninstall_agent ;;
+            4) delete_komari_data ;;
+            5) show_status ;;
+            6) show_logs ;;
+            7) restart_service ;;
+            8) stop_service ;;
+            9) cleanup_backups ;;
+            10)
                 tui_enabled && clear
                 exit 0 
                 ;;
