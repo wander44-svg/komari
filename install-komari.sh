@@ -31,6 +31,12 @@ SERVICE_NAME="komari"
 BINARY_PATH="$INSTALL_DIR/komari"
 BACKUP_DIR="$INSTALL_DIR/backup"
 DATA_BACKUP_DIR="$DATA_DIR/data/backup"
+AGENT_SERVICE_NAME="komari-agent"
+AGENT_BINARY_PATH="$INSTALL_DIR/agent"
+AGENT_LOG_DIR="/var/log/komari"
+INSTALLER_PATH="/usr/local/lib/komari/install-komari.sh"
+COMMAND_PATH="/usr/local/bin/komari"
+INSTALLER_URL="https://raw.githubusercontent.com/wander44-svg/komari/komari-optimal/install-komari.sh"
 DEFAULT_PORT="25774"
 LISTEN_PORT=""
 REPO="wander44-svg/komari"
@@ -544,7 +550,11 @@ uninstall_komari() {
     rmdir "$INSTALL_DIR" 2>/dev/null || log_info "数据目录 $INSTALL_DIR 不为空，未删除"
     log_success "Komari 二进制文件已删除"
 
-    ui_msgbox "卸载完成" "Komari 卸载完成。\n\n数据文件保留在 $DATA_DIR"
+    log_step "删除 komari 安装器命令..."
+    rm -f "$COMMAND_PATH" "$INSTALLER_PATH"
+    rmdir "$(dirname "$INSTALLER_PATH")" 2>/dev/null || true
+
+    ui_msgbox "卸载完成" "Komari 卸载完成。\n\n数据文件保留在 $DATA_DIR\nkomari 命令已删除，如需重新安装请再次运行远程安装命令。"
 }
 
 # Show service status
@@ -620,6 +630,100 @@ stop_service() {
     ui_msgbox "成功" "服务已停止。"
 }
 
+# Uninstall Komari Agent and remove its service and logs.
+uninstall_agent() {
+    if ! ui_yesno "确认卸载 Komari Agent" \
+        "这将停止并删除 Komari Agent 服务、程序文件和日志。\n\n您确定要继续吗？"; then
+        log_info "Komari Agent 卸载已取消"
+        return 0
+    fi
+
+    log_step "停止并删除 Komari Agent..."
+    local agent_service_file="/etc/systemd/system/${AGENT_SERVICE_NAME}.service"
+    if check_systemd; then
+        systemctl stop "$AGENT_SERVICE_NAME" 2>/dev/null || true
+        systemctl disable "$AGENT_SERVICE_NAME" 2>/dev/null || true
+    else
+        log_info "未检测到 systemd，跳过服务处理"
+    fi
+    rm -f "$agent_service_file"
+    check_systemd && systemctl daemon-reload
+    rm -rf "$AGENT_BINARY_PATH" "$AGENT_LOG_DIR"
+
+    if [ -e "$agent_service_file" ] || [ -e "$AGENT_BINARY_PATH" ] || [ -e "$AGENT_LOG_DIR" ]; then
+        ui_msgbox "卸载失败" "部分 Komari Agent 文件未能删除，请检查文件权限后重试。"
+        return 1
+    fi
+
+    ui_msgbox "卸载完成" "Komari Agent 已卸载。\n\n已删除：\n  服务: ${AGENT_SERVICE_NAME}.service\n  程序: $AGENT_BINARY_PATH\n  日志: $AGENT_LOG_DIR"
+}
+
+# Remove the complete Komari installation and data directory.
+delete_komari_data() {
+    if ! ui_yesno "确认删除 Komari 数据" \
+        "这将停止 Komari 服务并删除 /opt/komari 下的全部程序和数据。\n\n此操作不可恢复，您确定要继续吗？"; then
+        log_info "Komari 数据删除已取消"
+        return 0
+    fi
+
+    log_step "停止并删除 Komari 服务..."
+    local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+    if check_systemd; then
+        systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+        systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    else
+        log_info "未检测到 systemd，跳过服务处理"
+    fi
+    rm -f "$service_file"
+    check_systemd && systemctl daemon-reload
+    rm -rf "$INSTALL_DIR"
+
+    if [ -e "$service_file" ] || [ -e "$INSTALL_DIR" ]; then
+        ui_msgbox "删除失败" "部分 Komari 文件或数据未能删除，请检查文件权限后重试。"
+        return 1
+    fi
+
+    ui_msgbox "删除完成" "Komari 数据已删除。\n\n已删除：\n  服务: ${SERVICE_NAME}.service\n  目录: $INSTALL_DIR\n\n输入 komari 可再次打开安装器并重新安装。"
+}
+
+# Install a persistent `komari` command that opens this installer.
+install_cli_command() {
+    local script_source="${BASH_SOURCE[0]}"
+    mkdir -p "$(dirname "$INSTALLER_PATH")"
+
+    # Process substitution (bash <(curl ...)) exposes a transient /dev/fd path;
+    # fetch a complete copy in that case instead of copying an already-consumed FD.
+    if [ "$script_source" = "$INSTALLER_PATH" ]; then
+        :
+    elif [ -r "$script_source" ] && [[ "$script_source" != /dev/fd/* ]] && [[ "$script_source" != /proc/*/fd/* ]]; then
+        local staged_path="${INSTALLER_PATH}.tmp.$$"
+        if ! cp "$script_source" "$staged_path"; then
+            rm -f "$staged_path"
+            return 1
+        fi
+        mv -f "$staged_path" "$INSTALLER_PATH"
+    elif command -v curl >/dev/null 2>&1; then
+        local staged_path="${INSTALLER_PATH}.tmp.$$"
+        if ! curl -fsSL "$INSTALLER_URL" -o "$staged_path"; then
+            rm -f "$staged_path"
+            return 1
+        fi
+        mv -f "$staged_path" "$INSTALLER_PATH"
+    else
+        log_error "无法保存安装器：未找到当前脚本文件或 curl"
+        return 1
+    fi
+    chmod 755 "$INSTALLER_PATH"
+
+    cat > "$COMMAND_PATH" << EOF
+#!/bin/sh
+# Komari installer command wrapper.
+exec /usr/bin/env bash "$INSTALLER_PATH" "\$@"
+EOF
+    chmod 755 "$COMMAND_PATH"
+    log_success "已安装 komari 命令：输入 komari 可打开安装器"
+}
+
 
 # Main menu
 main_menu() {
@@ -631,12 +735,14 @@ main_menu() {
             "1" "安装 Komari" \
             "2" "升级 Komari" \
             "3" "卸载 Komari" \
-            "4" "查看状态" \
-            "5" "查看日志" \
-            "6" "重启服务" \
-            "7" "停止服务" \
-            "8" "清理升级历史备份" \
-            "9" "退出")
+            "4" "卸载 Komari Agent" \
+            "5" "删除 Komari 数据" \
+            "6" "查看状态" \
+            "7" "查看日志" \
+            "8" "重启服务" \
+            "9" "停止服务" \
+            "10" "清理升级历史备份" \
+            "11" "退出")
 
         # 用户在 TUI 中取消（ESC/Cancel）则退出
         if [ $? -ne 0 ] && tui_enabled; then
@@ -648,12 +754,14 @@ main_menu() {
             1) install_binary ;;
             2) upgrade_komari ;;
             3) uninstall_komari ;;
-            4) show_status ;;
-            5) show_logs ;;
-            6) restart_service ;;
-            7) stop_service ;;
-            8) cleanup_backups ;;
-            9)
+            4) uninstall_agent ;;
+            5) delete_komari_data ;;
+            6) show_status ;;
+            7) show_logs ;;
+            8) restart_service ;;
+            9) stop_service ;;
+            10) cleanup_backups ;;
+            11)
                 tui_enabled && clear
                 exit 0 
                 ;;
@@ -670,4 +778,5 @@ main_menu() {
 # Main execution
 check_root
 detect_tui
+install_cli_command || log_info "提示：未能安装 komari 命令，可稍后重新运行安装器重试。"
 main_menu
