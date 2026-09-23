@@ -180,10 +180,16 @@ show_banner() {
 
 # 选择发布通道，结果写入全局变量 CHANNEL
 select_channel() {
-    local choice
+    local choice stable_label snapshot_label
+
+    # Keep the channel name column fixed-width so both rows align at both ends
+    # even when the terminal renders CJK characters with double-cell width.
+    printf -v stable_label '%-10s%s' 'Stable' '稳定版'
+    printf -v snapshot_label '%-10s%s' 'Snapshot' '测试版'
+
     if ! choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
-        "1" "Stable      稳定版" \
-        "2" "Snapshot   测试版"); then
+        "1" "$stable_label" \
+        "2" "$snapshot_label"); then
         log_info "发布通道选择已取消"
         return 1
     fi
