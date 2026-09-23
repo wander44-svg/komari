@@ -28,6 +28,7 @@ func init() {
 }
 
 const telegramChannel = "telegram"
+const defaultTelegramEndpoint = "https://api.telegram.org/bot"
 
 func telegramConfiguration() map[string]any {
 	configs := msfactory.GetSenderConfigs()
@@ -58,6 +59,9 @@ func adminGetNotificationChannelConfiguration(_ context.Context, req *rpc.JsonRp
 			return nil, rpc.MakeError(rpc.InternalError, "Invalid saved Telegram configuration", nil)
 		}
 	}
+	if endpoint, ok := data["endpoint"].(string); !ok || endpoint == "" {
+		data["endpoint"] = defaultTelegramEndpoint
+	}
 	return map[string]any{"configuration": telegramConfiguration(), "data": data}, nil
 }
 
@@ -68,6 +72,12 @@ func adminSetNotificationChannelConfiguration(_ context.Context, req *rpc.JsonRp
 	}
 	if err := req.BindParams(&params); err != nil || params.ID != telegramChannel {
 		return nil, rpc.MakeError(rpc.InvalidParams, "Only Telegram notifications are supported", nil)
+	}
+	if params.Data == nil {
+		params.Data = map[string]any{}
+	}
+	if endpoint, ok := params.Data["endpoint"].(string); !ok || endpoint == "" {
+		params.Data["endpoint"] = defaultTelegramEndpoint
 	}
 	addition, err := json.Marshal(params.Data)
 	if err != nil {

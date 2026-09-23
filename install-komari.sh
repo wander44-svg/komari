@@ -182,17 +182,17 @@ show_banner() {
 select_channel() {
     local choice
     if ! choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
-        "stable" "stable 稳定版" \
-        "snapshot" "snapshot 测试版"); then
+        "1" "Stable      稳定版" \
+        "2" "Snapshot   测试版"); then
         log_info "发布通道选择已取消"
         return 1
     fi
 
     case "$choice" in
-        stable|1)
+        1|stable)
             CHANNEL="stable"
             ;;
-        snapshot|2)
+        2|snapshot)
             CHANNEL="snapshot"
             ;;
         *)
@@ -299,8 +299,16 @@ get_download_url() {
         log_info "最新 snapshot 版本: $latest_snapshot" >&2
         echo "https://github.com/${REPO}/releases/download/${latest_snapshot}/${file_name}"
     else
-        # 稳定版：使用 latest
-        echo "https://github.com/${REPO}/releases/latest/download/${file_name}"
+        # 稳定版：先获取最新正式 Release 的 tag，再按 tag 下载资产。
+        log_info "获取最新 stable 版本..." >&2
+        local latest_stable
+        latest_stable=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
+        if [ -z "$latest_stable" ]; then
+            log_error "未找到 stable 版本" >&2
+            return 1
+        fi
+        log_info "最新 stable 版本: $latest_stable" >&2
+        echo "https://github.com/${REPO}/releases/download/${latest_stable}/${file_name}"
     fi
 }
 

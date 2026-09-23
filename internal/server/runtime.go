@@ -161,6 +161,9 @@ func (a *App) runCleanups(ctx context.Context) error {
 }
 
 func registerScheduledWork() {
+	if err := tasks.EnsureDefaultPingTasks(); err != nil {
+		logger.ErrorArgs("server", "Failed to create default ping tasks:", err)
+	}
 	if err := tasks.ReloadPingSchedule(); err != nil {
 		logger.ErrorArgs("server", "Failed to reload ping schedule:", err)
 	}

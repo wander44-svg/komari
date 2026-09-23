@@ -12,6 +12,53 @@ import (
 	"gorm.io/gorm"
 )
 
+// DefaultPingTask describes a latency check created on a new installation.
+type DefaultPingTask struct {
+	Name     string
+	Target   string
+	TaskType string
+	Interval int
+}
+
+var defaultPingTasks = []DefaultPingTask{
+	{Name: "移动", Target: "gd-cm-dualstack.ip.zstaticcdn.com:80", TaskType: "tcp", Interval: 60},
+	{Name: "联通", Target: "gd-cu-dualstack.ip.zstaticcdn.com:80", TaskType: "tcp", Interval: 60},
+	{Name: "电信", Target: "gd-ct-dualstack.ip.zstaticcdn.com:80", TaskType: "tcp", Interval: 60},
+	{Name: "GZ-IPv4", Target: "gd-guangzhou-cm-v4.ip.zstaticcdn.com:443", TaskType: "tcp", Interval: 60},
+	{Name: "GD-IPv6", Target: "gd-cm-v6.ip.zstaticcdn.com:80", TaskType: "tcp", Interval: 60},
+}
+
+// EnsureDefaultPingTasks seeds the five built-in TCP checks on a fresh database.
+// Existing installations with user-created tasks are left unchanged.
+func EnsureDefaultPingTasks() error {
+	db := dbcore.GetDBInstance()
+	var count int64
+	if err := db.Model(&models.PingTask{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 0 {
+		return nil
+	}
+	var clientUUIDs []string
+	if err := db.Model(&models.Client{}).Pluck("uuid", &clientUUIDs).Error; err != nil {
+		return err
+	}
+	clients := models.StringArray(clientUUIDs)
+	for _, item := range defaultPingTasks {
+		task := models.PingTask{
+			Name: item.Name, Target: item.Target, Type: item.TaskType,
+			Interval: item.Interval, DefaultOn: true, Clients: clients,
+		}
+		if err := db.Create(&task).Error; err != nil {
+			return err
+		}
+		if err := db.Model(&models.PingTask{}).Where("id = ?", task.Id).Update("weight", int(task.Id)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // AddPingTask 创建延迟监测任务。defaultOn 表示新加入的服务器是否自动开启此监测。
 func AddPingTask(clients []string, defaultOn bool, name string, target, task_type string, interval int) (uint, error) {
 	db := dbcore.GetDBInstance()
