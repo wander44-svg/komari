@@ -206,7 +206,7 @@ func parseTemplate(messageTemplate string, event any) string {
 
 // formatTemplateField 将事件字段格式化为模板占位符的值：
 // 字符串字段直接取值；any 字段取其实际值格式化；Clients 字段拼接客户端名称
-// （无名称时回退为 UUID）；Time 字段按服务器本地时区格式化为 RFC3339；其余类型返回空串。
+// （无名称时回退为 UUID）；Time 字段按服务器本地时区格式化为易读时间；其余类型返回空串。
 func formatTemplateField(fieldName string, v reflect.Value) string {
 	if v.Kind() == reflect.Interface {
 		if v.IsNil() {
@@ -232,7 +232,7 @@ func formatTemplateField(fieldName string, v reflect.Value) string {
 		}
 	case reflect.Struct:
 		if t, ok := v.Interface().(time.Time); ok {
-			return t.In(time.Local).Format(time.RFC3339Nano)
+			return t.In(time.Local).Format("2006-01-02 15:04:05")
 		}
 	}
 	return ""
