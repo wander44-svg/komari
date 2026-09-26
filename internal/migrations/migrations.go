@@ -342,6 +342,14 @@ func migrateLegacyConfigToItems(db *gorm.DB) error {
 }
 
 func legacyConfigRows(oldData legacyConfig) ([]appconfig.ConfigItem, error) {
+	retired := map[string]struct{}{
+		"api_key": {},
+		"auto_discovery_key": {},
+		"o_auth_enabled": {},
+		"o_auth_provider": {},
+		"custom_head": {},
+		"custom_body": {},
+	}
 	val := reflect.ValueOf(oldData)
 	typ := reflect.TypeOf(oldData)
 	newRows := make([]appconfig.ConfigItem, 0, val.NumField())
@@ -351,6 +359,9 @@ func legacyConfigRows(oldData legacyConfig) ([]appconfig.ConfigItem, error) {
 		tag := field.Tag.Get("json")
 		key := strings.Split(tag, ",")[0]
 		if key == "" || key == "-" || key == "id" {
+			continue
+		}
+		if _, removed := retired[key]; removed {
 			continue
 		}
 

@@ -31,9 +31,6 @@ func OriginInAllowlist(origin, rawAllowlist string) bool {
 		return false
 	}
 	for _, entry := range SplitAllowlist(rawAllowlist) {
-		if entry == "*" {
-			return true
-		}
 		if strings.Contains(entry, "://") {
 			normalizedEntry, _, ok := normalizeOrigin(entry)
 			if ok && strings.EqualFold(normalizedEntry, normalizedOrigin) {

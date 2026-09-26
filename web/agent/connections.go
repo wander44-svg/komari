@@ -11,7 +11,6 @@ import (
 
 var (
 	connectedClients  = make(map[string]*connection.SafeConn)
-	connectedClientV2 = make(map[string]bool)
 	latestReport      = make(map[string]*v1.Report)
 	recentReports     = make(map[string][]v1.Report)
 	// presenceOnly stores online state for non-WebSocket agents.
@@ -41,18 +40,6 @@ func SetConnectedClients(uuid string, conn *connection.SafeConn) {
 	connectedClients[uuid] = conn
 }
 
-func SetClientProtocolVersion(uuid string, version int) {
-	mu.Lock()
-	defer mu.Unlock()
-	connectedClientV2[uuid] = version >= 2
-}
-
-func IsV2Client(uuid string) bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return connectedClientV2[uuid]
-}
-
 func DeleteClientConditionally(uuid string, connToRemove *connection.SafeConn) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -60,7 +47,6 @@ func DeleteClientConditionally(uuid string, connToRemove *connection.SafeConn) {
 	// 检查当前 map 里的 conn 是否就是要删除的这一个
 	if currentConn, exists := connectedClients[uuid]; exists && currentConn == connToRemove {
 		delete(connectedClients, uuid)
-		delete(connectedClientV2, uuid)
 	}
 }
 func DeleteConnectedClients(uuid string) {
@@ -68,7 +54,6 @@ func DeleteConnectedClients(uuid string) {
 	defer mu.Unlock()
 	// 只从 map 中删除，不再负责关闭连接
 	delete(connectedClients, uuid)
-	delete(connectedClientV2, uuid)
 }
 
 // SetPresence sets or clears presence for non-WebSocket agents.

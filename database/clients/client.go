@@ -3,17 +3,40 @@ package clients
 import (
 	"encoding/json"
 	"fmt"
-	logger "github.com/komari-monitor/komari/utils/log"
 	"math"
+	"net"
+	"unicode/utf8"
 	"time"
 
 	"github.com/komari-monitor/komari/database/dbcore"
 	"github.com/komari-monitor/komari/database/models"
 	"github.com/komari-monitor/komari/database/tasks"
 	"github.com/komari-monitor/komari/utils"
+	logger "github.com/komari-monitor/komari/utils/log"
 
 	"github.com/google/uuid"
 )
+
+var clientInfoStringLimits = map[string]int{
+	"cpu_name":       100,
+	"virtualization": 50,
+	"arch":           50,
+	"os":             100,
+	"kernel_version": 100,
+	"gpu_name":       100,
+	"ipv4":           100,
+	"ipv6":           100,
+	"version":        100,
+	"region":         100,
+}
+
+var clientInfoNumericLimits = map[string]float64{
+	"cpu_cores":          4096,
+	"cpu_physical_cores": 4096,
+	"mem_total":          math.MaxInt64 - 1,
+	"swap_total":         math.MaxInt64 - 1,
+	"disk_total":         math.MaxInt64 - 1,
+}
 
 func DeleteClient(clientUuid string) error {
 	db := dbcore.GetDBInstance()
@@ -31,12 +54,9 @@ func SaveClientInfo(update map[string]interface{}) error {
 		return fmt.Errorf("invalid client UUID")
 	}
 
-	// 确保更新的字段不为空
-	if len(update) == 0 {
+	if len(update) <= 1 {
 		return fmt.Errorf("no fields to update")
 	}
-
-	update["updated_at"] = time.Now().UTC()
 
 	toFloat64 := func(value interface{}) (float64, bool) {
 		switch typed := value.(type) {
@@ -74,6 +94,43 @@ func SaveClientInfo(update map[string]interface{}) error {
 			return 0, false
 		}
 	}
+
+	// Only monitoring-owned columns may be changed by an Agent. Administrative
+	// fields such as token, name, group, price and billing settings are never
+	// accepted from the monitoring channel.
+	sanitized := map[string]interface{}{"updated_at": time.Now().UTC()}
+	for key, value := range update {
+		if key == "uuid" {
+			continue
+		}
+		if limit, allowed := clientInfoStringLimits[key]; allowed {
+			text, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("%s must be a string", key)
+			}
+			if !utf8.ValidString(text) || utf8.RuneCountInString(text) > limit {
+				return fmt.Errorf("%s exceeds the maximum length of %d characters", key, limit)
+			}
+			if (key == "ipv4" || key == "ipv6") && text != "" {
+				parsed := net.ParseIP(text)
+				if parsed == nil || (key == "ipv4" && parsed.To4() == nil) || (key == "ipv6" && parsed.To4() != nil) {
+					return fmt.Errorf("%s is not a valid address", key)
+				}
+			}
+			sanitized[key] = text
+			continue
+		}
+		if limit, allowed := clientInfoNumericLimits[key]; allowed {
+			number, ok := toFloat64(value)
+			if !ok || math.IsNaN(number) || math.IsInf(number, 0) || math.Trunc(number) != number || number < 0 || number > limit {
+				return fmt.Errorf("%s must be an integer between 0 and %.0f", key, limit)
+			}
+			sanitized[key] = int64(number)
+			continue
+		}
+		return fmt.Errorf("agent field %q is not allowed", key)
+	}
+	update = sanitized
 
 	checkOptionalInt := func(name, key string, maxValue float64) error {
 		value, exists := update[key]

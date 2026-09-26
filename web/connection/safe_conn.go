@@ -55,6 +55,8 @@ var errTooManyDroppedFrames = errors.New("too many frames dropped by plugin hook
 // maxConsecutiveDroppedFrames bounds the internal re-read loop.
 const maxConsecutiveDroppedFrames = 16
 
+const maxWebSocketMessageSize int64 = 1 << 20
+
 // SafeConn wraps a websocket connection with a mutex so concurrent writes
 // cannot interleave frames, and funnels every frame through the optional
 // plugin interceptor when one is attached.
@@ -68,11 +70,16 @@ type SafeConn struct {
 }
 
 func NewSafeConn(conn *websocket.Conn) *SafeConn {
+	conn.SetReadLimit(maxWebSocketMessageSize)
 	return &SafeConn{
 		conn: conn,
 		mu:   sync.Mutex{},
 		ID:   time.Now().UnixNano(),
 	}
+}
+
+func (sc *SafeConn) SetReadLimit(limit int64) {
+	sc.conn.SetReadLimit(limit)
 }
 
 // SetInterceptor attaches the hook provider and the connection identity. It

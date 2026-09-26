@@ -15,6 +15,8 @@ import (
 	"github.com/komari-monitor/komari/web/api"
 )
 
+const maxRPCBodySize int64 = 2 << 20
+
 // OnRpcRequest 是 /api/rpc2 的统一入口：GET 升级为 WebSocket，POST 处理单条/批量 JSON-RPC。
 func OnRpcRequest(c *gin.Context) {
 	// GET -> WebSocket
@@ -119,6 +121,7 @@ func serveWebSocket(c *gin.Context) {
 }
 
 func servePost(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRPCBodySize)
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, rpc.ErrorResponse(nil, rpc.ParseError, "read body error", err.Error()))
@@ -172,11 +175,7 @@ func buildContextMeta(c *gin.Context) *rpc.ContextMeta {
 		}
 	case rpc.PrincipalAgent:
 		meta.ClientUUID = p.ClientUUID
-		// 尝试提取 client token(用于某些 handler 需要原始 token 的场景)。
-		// 优先查询参数 ?Authorization=<token>，再尝试 Bearer header。
-		if token := c.Query("Authorization"); token != "" {
-			meta.ClientToken = token
-		} else if auth := c.GetHeader("Authorization"); auth != "" && len(auth) > len("Bearer ") {
+		if auth := c.GetHeader("Authorization"); auth != "" && len(auth) > len("Bearer ") {
 			meta.ClientToken = auth[len("Bearer "):]
 		}
 	}

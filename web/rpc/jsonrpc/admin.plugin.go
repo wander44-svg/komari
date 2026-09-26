@@ -9,39 +9,6 @@ import (
 	"github.com/komari-monitor/komari/pkg/rpc"
 )
 
-func init() {
-	RegisterWithGroupAndMeta("listPlugins", rpc.RoleAdmin, adminListPlugins, &rpc.MethodMeta{
-		Name:    "admin:listPlugins",
-		Summary: "List installed plugins with enabled/running state",
-		Returns: "Plugin[]",
-	})
-	RegisterWithGroupAndMeta("setPluginEnabled", rpc.RoleAdmin, adminSetPluginEnabled, &rpc.MethodMeta{
-		Name:    "admin:setPluginEnabled",
-		Summary: "Enable or disable a plugin by short name",
-		Returns: "null | { requires_approval: true }",
-	})
-	RegisterWithGroupAndMeta("getPluginLogs", rpc.RoleAdmin, adminGetPluginLogs, &rpc.MethodMeta{
-		Name:    "admin:getPluginLogs",
-		Summary: "Get the bounded runtime log buffer of a plugin",
-		Returns: "{ logs: string }",
-	})
-	RegisterWithGroupAndMeta("deletePlugin", rpc.RoleAdmin, adminDeletePlugin, &rpc.MethodMeta{
-		Name:    "admin:deletePlugin",
-		Summary: "Delete an installed plugin and its persisted state",
-		Returns: "null",
-	})
-	RegisterWithGroupAndMeta("getPluginConfiguration", rpc.RoleAdmin, adminGetPluginConfiguration, &rpc.MethodMeta{
-		Name:    "admin:getPluginConfiguration",
-		Summary: "Get a plugin's declared config items and saved values",
-		Returns: "{ configuration: object, data: object }",
-	})
-	RegisterWithGroupAndMeta("setPluginConfiguration", rpc.RoleAdmin, adminSetPluginConfiguration, &rpc.MethodMeta{
-		Name:    "admin:setPluginConfiguration",
-		Summary: "Save a plugin's configuration values",
-		Returns: "null",
-	})
-}
-
 func adminListPlugins(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	return plugin.List(), nil
 }

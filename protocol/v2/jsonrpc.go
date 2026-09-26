@@ -11,12 +11,7 @@ const (
 	MethodAgentReport     = "agent.report"
 	MethodAgentBasicInfo  = "agent.basicInfo"
 	MethodAgentPingResult = "agent.pingResult"
-	MethodAgentTaskResult = "agent.taskResult"
-	MethodAgentExec       = "agent.exec"
 	MethodAgentPing       = "agent.ping"
-	MethodAgentMessage    = "agent.message"
-	MethodAgentEvent      = "agent.event"
-	MethodAgentTerminal   = "agent.terminal.request"
 	MethodAgentPull       = "agent.pull"
 )
 
@@ -70,30 +65,10 @@ type PullParams struct {
 	LastEventID  string   `json:"last_event_id,omitempty"`
 }
 
-type ExecParams struct {
-	TaskID  string `json:"task_id"`
-	Command string `json:"command"`
-}
-
 type PingParams struct {
 	TaskID uint   `json:"ping_task_id"`
 	Type   string `json:"ping_type"`
 	Target string `json:"ping_target"`
-}
-
-type MessageParams struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
-}
-
-type EventParams struct {
-	Type string `json:"type"`
-	Data any    `json:"data,omitempty"`
-}
-
-type TerminalRequestParams struct {
-	RequestID string `json:"request_id"`
 }
 
 func Success(id any, result any) Response {

@@ -43,35 +43,23 @@ func DispatchV2Event(uuid, method string, params any) bool {
 			return true
 		}
 	}
-	if !IsV2Client(uuid) {
-		return false
-	}
 	EnqueueV2Event(uuid, method, params)
 	return true
 }
 
-func DispatchPing(uuid string, legacy any, params v2.PingParams) bool {
+func DispatchPing(uuid string, params v2.PingParams) bool {
 	if conn := GetConnectedClients()[uuid]; conn != nil {
-		payload := legacy
-		if IsV2Client(uuid) {
-			payload = v2.Request{JSONRPC: v2.Version, Method: v2.MethodAgentPing, Params: params}
-		}
+		payload := v2.Request{JSONRPC: v2.Version, Method: v2.MethodAgentPing, Params: params}
 		if conn.WriteJSON(payload) == nil {
 			return true
 		}
-	}
-	if !IsV2Client(uuid) {
-		return false
 	}
 	EnqueueV2Event(uuid, v2.MethodAgentPing, params)
 	return true
 }
 
 func IsAgentOnline(uuid string) bool {
-	if GetConnectedClients()[uuid] != nil {
-		return true
-	}
-	return IsV2Client(uuid)
+	return GetConnectedClients()[uuid] != nil
 }
 
 func EnqueueV2Event(uuid, method string, params any) v2.Event {

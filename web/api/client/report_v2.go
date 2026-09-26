@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	logger "github.com/komari-monitor/komari/utils/log"
 	"io"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/komari-monitor/komari/database/clients"
 	v2 "github.com/komari-monitor/komari/protocol/v2"
 	"github.com/komari-monitor/komari/utils/notifier"
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
@@ -20,17 +20,40 @@ import (
 	"github.com/komari-monitor/komari/web/connection"
 )
 
+const maxAgentRequestBodySize int64 = 2 << 20
+
+func readLimitedBody(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("request body exceeds %d bytes", limit)
+	}
+	return data, nil
+}
+
 func readMaybeCompressedBody(r *http.Request) ([]byte, error) {
 	defer r.Body.Close()
 	if strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
-		zr, err := gzip.NewReader(r.Body)
+		// Bound both the compressed input and the decompressed output. Without
+		// the first limit a client could stream an unbounded gzip payload while
+		// producing only a small decoded JSON body.
+		compressed, err := io.ReadAll(io.LimitReader(r.Body, maxAgentRequestBodySize+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(compressed)) > maxAgentRequestBodySize {
+			return nil, fmt.Errorf("compressed request body exceeds %d bytes", maxAgentRequestBodySize)
+		}
+		zr, err := gzip.NewReader(bytes.NewReader(compressed))
 		if err != nil {
 			return nil, err
 		}
 		defer zr.Close()
-		return io.ReadAll(zr)
+		return readLimitedBody(zr, maxAgentRequestBodySize)
 	}
-	return io.ReadAll(r.Body)
+	return readLimitedBody(r.Body, maxAgentRequestBodySize)
 }
 
 func bindV2Params[T any](raw any, target *T) error {
@@ -51,7 +74,7 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 		if err := bindV2Params(req.Params, &params); err != nil {
 			return v2.Error(req.ID, -32602, "invalid report params", err.Error())
 		}
-		if err := ingestReport(uuid, params.Report, 2, true); err != nil {
+		if err := ingestReport(uuid, params.Report, true); err != nil {
 			return v2.Error(req.ID, -32000, "failed to save report", err.Error())
 		}
 		return v2.Success(req.ID, gin.H{
@@ -82,7 +105,6 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 			return v2.Error(req.ID, -32602, "invalid pull params", err.Error())
 		}
 		refreshPostPresence(uuid)
-		agent_runtime.SetClientProtocolVersion(uuid, 2)
 		timeout := 0 * time.Second
 		if allowWait {
 			timeout = 25 * time.Second
@@ -140,7 +162,6 @@ func WebSocketV2RPC(c *gin.Context) {
 		go oldConn.Close()
 	}
 	agent_runtime.SetConnectedClients(uuid, conn)
-	agent_runtime.SetClientProtocolVersion(uuid, 2)
 	go notifierOnline(uuid, conn.ID)
 	defer func() {
 		agent_runtime.DeleteClientConditionally(uuid, conn)
@@ -200,12 +221,7 @@ func clientUUIDFromContext(c *gin.Context) (string, bool) {
 			return uuid, true
 		}
 	}
-	token := c.Query("token")
-	if token == "" {
-		return "", false
-	}
-	uuid, err := clients.GetClientUUIDByToken(token)
-	return uuid, err == nil && uuid != ""
+	return "", false
 }
 
 func notifierOnline(uuid string, connID int64) {

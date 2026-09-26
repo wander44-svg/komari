@@ -110,6 +110,9 @@ func adminGetSettings(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonR
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to get settings: "+err.Error(), nil)
 	}
+	for key := range retiredConfigKeys {
+		delete(cst, key)
+	}
 	return cst, nil
 }
 
@@ -132,6 +135,16 @@ var panelConfigKeys = map[string]struct{}{
 	config.PanelListenPortKey:  {},
 	config.PanelTLSCertFileKey: {},
 	config.PanelTLSKeyFileKey:  {},
+}
+
+var retiredConfigKeys = map[string]struct{}{
+	"api_key":                {},
+	"auto_discovery_key":     {},
+	"o_auth_enabled":         {},
+	"o_auth_provider":        {},
+	"custom_head":            {},
+	"custom_body":            {},
+	"plugin_market_sources":  {},
 }
 
 // metricKeysTouched 判断本次设置变更是否涉及 metrics 数据库相关键。
@@ -159,6 +172,9 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid or missing request body: "+err.Error(), nil)
 	}
 	removeRetiredLowResourceMode(cfg)
+	for key := range retiredConfigKeys {
+		delete(cfg, key)
+	}
 	if err := validatePanelSettingChanges(cfg); err != nil {
 		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
 	}

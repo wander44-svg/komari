@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -76,9 +74,6 @@ func UpgradeSafeConn(c *gin.Context, options ...WebSocketUpgradeOption) (*connec
 
 func CheckWebSocketOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	if strings.EqualFold(os.Getenv("KOMARI_WS_DISABLE_ORIGIN"), "true") {
-		return true
-	}
 	enabled, _ := config.GetAs[bool](config.WsOriginCheckEnabledKey, true)
 	if !enabled {
 		return true

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +26,10 @@ type LoginRequest struct {
 const sessionCookieMaxAge = 2592000
 
 const (
-	loginWindow = 10 * time.Minute
+	loginWindow      = 10 * time.Minute
 	loginMaxFailures = 8
+	loginMaxEntries  = 4096
+	maxLoginBodySize = 64 << 10
 )
 
 type loginAttempt struct {
@@ -39,34 +42,73 @@ var loginAttempts = struct {
 	items map[string]loginAttempt
 }{items: make(map[string]loginAttempt)}
 
-func loginRateLimited(ip string) bool {
+func pruneLoginAttempts(now time.Time) {
+	for key, attempt := range loginAttempts.items {
+		if attempt.ResetAt.Before(now) {
+			delete(loginAttempts.items, key)
+		}
+	}
+	if len(loginAttempts.items) < loginMaxEntries {
+		return
+	}
+	// The map is deliberately bounded. When it is full, discard the entry
+	// closest to expiry before accepting another key.
+	var oldestKey string
+	var oldest time.Time
+	for key, attempt := range loginAttempts.items {
+		if oldestKey == "" || attempt.ResetAt.Before(oldest) {
+			oldestKey, oldest = key, attempt.ResetAt
+		}
+	}
+	delete(loginAttempts.items, oldestKey)
+}
+
+func loginRateLimited(keys ...string) bool {
 	now := time.Now()
 	loginAttempts.Lock()
 	defer loginAttempts.Unlock()
-	a := loginAttempts.items[ip]
-	if a.ResetAt.Before(now) {
-		delete(loginAttempts.items, ip)
-		return false
+	pruneLoginAttempts(now)
+	for _, key := range keys {
+		if key != "" && loginAttempts.items[key].Failures >= loginMaxFailures {
+			return true
+		}
 	}
-	return a.Failures >= loginMaxFailures
+	return false
 }
 
-func recordLoginFailure(ip string) {
+func recordLoginFailure(keys ...string) {
 	now := time.Now()
 	loginAttempts.Lock()
 	defer loginAttempts.Unlock()
-	a := loginAttempts.items[ip]
-	if a.ResetAt.Before(now) {
-		a = loginAttempt{ResetAt: now.Add(loginWindow)}
+	pruneLoginAttempts(now)
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		if _, exists := loginAttempts.items[key]; !exists && len(loginAttempts.items) >= loginMaxEntries {
+			pruneLoginAttempts(now)
+		}
+		a := loginAttempts.items[key]
+		if a.ResetAt.Before(now) {
+			a = loginAttempt{ResetAt: now.Add(loginWindow)}
+		}
+		a.Failures++
+		loginAttempts.items[key] = a
 	}
-	a.Failures++
-	loginAttempts.items[ip] = a
 }
 
-func clearLoginFailures(ip string) {
+func clearLoginFailures(keys ...string) {
 	loginAttempts.Lock()
-	delete(loginAttempts.items, ip)
+	for _, key := range keys {
+		delete(loginAttempts.items, key)
+	}
 	loginAttempts.Unlock()
+}
+
+func loginIPKey(ip string) string { return "ip:" + ip }
+
+func loginUserKey(username string) string {
+	return "user:" + strings.ToLower(strings.TrimSpace(username))
 }
 
 func setSessionCookie(c *gin.Context, value string, maxAge int) {
@@ -77,13 +119,14 @@ func setSessionCookie(c *gin.Context, value string, maxAge int) {
 		MaxAge:   maxAge,
 		Secure:   utils.GetScheme(c) == "https",
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 
 func Login(c *gin.Context) {
 	clientIP := c.ClientIP()
-	if loginRateLimited(clientIP) {
+	ipKey := loginIPKey(clientIP)
+	if loginRateLimited(ipKey) {
 		c.Header("Retry-After", "600")
 		api.RespondError(c, http.StatusTooManyRequests, "Too many failed login attempts; try again later")
 		return
@@ -94,6 +137,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxLoginBodySize)
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		api.RespondError(c, http.StatusBadRequest, "Invalid request body: "+err.Error())
@@ -109,10 +153,16 @@ func Login(c *gin.Context) {
 		api.RespondError(c, http.StatusBadRequest, "Invalid request body: Username and password are required")
 		return
 	}
+	userKey := loginUserKey(data.Username)
+	if loginRateLimited(ipKey, userKey) {
+		c.Header("Retry-After", "600")
+		api.RespondError(c, http.StatusTooManyRequests, "Too many failed login attempts; try again later")
+		return
+	}
 
 	uuid, success := accounts.CheckPassword(data.Username, data.Password)
 	if !success {
-		recordLoginFailure(clientIP)
+		recordLoginFailure(ipKey, userKey)
 		api.RespondError(c, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
@@ -120,12 +170,12 @@ func Login(c *gin.Context) {
 	user, _ := accounts.GetUserByUUID(uuid)
 	if user.TwoFactor != "" { // 开启了2FA
 		if data.TwoFa == "" {
-			recordLoginFailure(clientIP)
+			recordLoginFailure(ipKey, userKey)
 			api.RespondError(c, http.StatusUnauthorized, "2FA code is required")
 			return
 		}
 		if ok, err := accounts.Verify2Fa(uuid, data.TwoFa); err != nil || !ok {
-			recordLoginFailure(clientIP)
+			recordLoginFailure(ipKey, userKey)
 			api.RespondError(c, http.StatusUnauthorized, "Invalid 2FA code")
 			return
 		}
@@ -137,7 +187,7 @@ func Login(c *gin.Context) {
 		return
 	}
 	setSessionCookie(c, session, sessionCookieMaxAge)
-	clearLoginFailures(clientIP)
+	clearLoginFailures(ipKey, userKey)
 	auditlog.Log(c.ClientIP(), uuid, "logged in (password)", "login")
 	api.RespondSuccess(c, gin.H{"logged_in": true})
 }

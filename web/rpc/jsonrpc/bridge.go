@@ -79,10 +79,13 @@ func Bind(method string, opts ...BindOption) gin.HandlerFunc {
 func assembleParams(c *gin.Context, cfg *bindConfig) (any, bool) {
 	var bodyVal any
 	if c.Request.Body != nil {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRPCBodySize)
 		if raw, err := io.ReadAll(c.Request.Body); err == nil && len(raw) > 0 {
 			if err := json.Unmarshal(raw, &bodyVal); err != nil {
 				return nil, false
 			}
+		} else if err != nil {
+			return nil, false
 		}
 	}
 

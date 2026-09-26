@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,7 +40,54 @@ const (
 	// Keep an independent budget for report flushing and store teardown. Reusing
 	// the HTTP deadline here can skip queued metric writes after a slow request.
 	resourceCleanupTimeout = 30 * time.Second
+	httpReadHeaderTimeout = 10 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 60 * time.Second
+	httpIdleTimeout       = 2 * time.Minute
+	httpMaxHeaderBytes    = 1 << 20
 )
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
+	}
+}
+
+func configureTrustedProxies(r *gin.Engine) error {
+	raw := strings.TrimSpace(os.Getenv("KOMARI_TRUSTED_PROXIES"))
+	if raw == "" {
+		// Gin otherwise trusts arbitrary forwarding headers by default. Direct
+		// deployments must use the socket peer address as the client identity.
+		return r.SetTrustedProxies(nil)
+	}
+	parts := strings.Split(raw, ",")
+	proxies := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if proxy := strings.TrimSpace(part); proxy != "" {
+			proxies = append(proxies, proxy)
+		}
+	}
+	if len(proxies) == 0 {
+		return r.SetTrustedProxies(nil)
+	}
+	return r.SetTrustedProxies(proxies)
+}
+
+func securityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Next()
+	}
+}
 
 // StartBackground starts scheduled work after all stores are ready.
 func (a *App) StartBackground() error {
@@ -68,7 +116,10 @@ func (a *App) registerReloadHandlers(cors *security.CorsController) {
 // BuildRouter constructs the normal application router and starts reloads.
 func (a *App) BuildRouter() error {
 	r := gin.New()
-	r.Use(logger.GinLogger(), logger.GinRecovery())
+	if err := configureTrustedProxies(r); err != nil {
+		return fmt.Errorf("configure trusted proxies: %w", err)
+	}
+	r.Use(logger.GinLogger(), logger.GinRecovery(), securityHeaders())
 	cors := security.NewCorsController(a.settings.CorsOriginCheckEnabled, a.settings.CorsAllowedOrigins)
 	r.Use(cors.Middleware(), api.IdentityMiddleware(), api.PrivateSiteMiddleware(), noStoreAPIResponses())
 
@@ -86,7 +137,7 @@ func (a *App) BuildRouter() error {
 
 // Run starts the normal HTTP server and blocks until shutdown or fatal error.
 func (a *App) Run() error {
-	a.server = &http.Server{Addr: a.listenAddr, Handler: a.engine}
+	a.server = newHTTPServer(a.listenAddr, a.engine)
 	serverErr := make(chan error, 1)
 	logger.Infof("server", "Starting server on %s ...", a.listenAddr)
 	go func() {
