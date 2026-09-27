@@ -20,13 +20,12 @@ jobs:
 
     steps:
       - id: release
-        env:
-          TAG: ${{ github.event.release.tag_name }}
         run: |
-          frontend_ref=""
-          if [[ "$TAG" =~ ^(.+)-fix[0-9]+$ ]]; then
-            frontend_ref="${BASH_REMATCH[1]}"
-          fi
+          # The fork keeps the frontend on its own komari-optimal branch.
+          # Do not derive a frontend tag from the backend release tag: the
+          # repositories have independent refs and komari-web has no 1.4.4
+          # tag for backend fix releases.
+          frontend_ref="komari-optimal"
           echo "frontend_ref=$frontend_ref" >> "$GITHUB_OUTPUT"
 
   build-frontend:
