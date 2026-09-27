@@ -82,8 +82,6 @@ func (c *Controller) Register(r *gin.Engine) {
 	// here because many of them require a ready metric store.
 	r.POST("/api/login", limitLoginBody, publicapi.Login)
 	r.GET("/api/me", jsonrpc.Bind("public:getMe", jsonrpc.WithRaw()))
-	r.GET("/api/oauth", publicapi.OAuth)
-	r.GET("/api/oauth_callback", publicapi.OAuthCallback)
 
 	g := r.Group(APIPath, c.requireActive)
 	g.GET("/auth", c.authStatus)
@@ -106,12 +104,8 @@ func (c *Controller) requireActive(ctx *gin.Context) {
 }
 
 func (c *Controller) authStatus(ctx *gin.Context) {
-	oauthEnabled, _ := appconfig.GetAs[bool](appconfig.OAuthEnabledKey, false)
-	oauthProvider, _ := appconfig.GetAs[string](appconfig.OAuthProviderKey, "github")
 	disablePassword, _ := appconfig.GetAs[bool](appconfig.DisablePasswordLoginKey, false)
 	api.RespondSuccess(ctx, gin.H{
-		"oauth_enabled":          oauthEnabled,
-		"oauth_provider":         oauthProvider,
 		"password_login_enabled": !disablePassword,
 	})
 }
