@@ -143,14 +143,19 @@ func adminEditOfflineNotification(_ context.Context, req *rpc.JsonRpcRequest) (a
 			return nil, rpc.MakeError(rpc.InvalidParams, "GracePeriod must be a positive integer", nil)
 		}
 	}
-	err := dbcore.GetDBInstance().Model(&models.OfflineNotification{}).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "client"}},
-			DoUpdates: clause.AssignmentColumns([]string{"enable", "grace_period"}),
-		}).
-		Select("*").Create(notifications).Error
-	if err != nil {
-		return nil, rpc.MakeError(rpc.InternalError, "Failed to edit offline notifications: "+err.Error(), nil)
+	db := dbcore.GetDBInstance()
+	for _, noti := range notifications {
+		// Assign is intentional here: unlike a struct-based update, it preserves
+		// an explicit false value instead of allowing the model default (true) to
+		// turn a disabled notification back on.
+		if err := db.Where("client = ?", noti.Client).
+			Assign(map[string]any{
+				"enable":       noti.Enable,
+				"grace_period": noti.GracePeriod,
+			}).
+			FirstOrCreate(&models.OfflineNotification{Client: noti.Client}).Error; err != nil {
+			return nil, rpc.MakeError(rpc.InternalError, "Failed to edit offline notifications: "+err.Error(), nil)
+		}
 	}
 	return nil, nil
 }
