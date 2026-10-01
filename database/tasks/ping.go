@@ -16,9 +16,7 @@ import (
 const defaultPingLossTemplate = "{{emoji}}\nClients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
 
 func normalizePingLossTemplate(template string) string {
-	if strings.TrimSpace(template) == "" ||
-		template == "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}" ||
-		strings.HasPrefix(template, "⚠️ 丢包告警") || strings.HasPrefix(template, "✅ 丢包恢复") {
+	if strings.TrimSpace(template) == "" {
 		return defaultPingLossTemplate
 	}
 	return template

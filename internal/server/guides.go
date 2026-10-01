@@ -28,10 +28,9 @@ type DatabaseMigrationRequirement struct {
 
 func (r DatabaseMigrationRequirement) Required() bool { return r.mode != "" }
 
-// DatabaseMigrationRequired checks both supported migration inputs before the
-// normal Metric Store connection is initialized. Structure upgrades run first
-// when both inputs exist, then the startup loop detects the legacy tables on
-// its next pass.
+// DatabaseMigrationRequired checks migration inputs for an explicitly requested
+// migration flow. Normal startup does not invoke this check; test installations
+// start directly with the current schema.
 func (a *App) DatabaseMigrationRequired() (DatabaseMigrationRequirement, error) {
 	structureRequired, err := metricstore.StructureUpgradeRequired(context.Background())
 	if err != nil {

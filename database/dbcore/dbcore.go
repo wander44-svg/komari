@@ -427,6 +427,8 @@ func doInitialize() error {
 	default:
 		return fmt.Errorf("unsupported database type: %s (supported: %s)", flags.DatabaseType, flags.SupportedDatabaseTypes())
 	}
+	// 保留主数据库的重要数据迁移（账户、客户端、站点设置、通知配置等）。
+	// 历史指标库/旧监控结构的迁移由启动流程明确跳过，测试版不为其增加复杂分支。
 	if err := migrations.Run(migrations.Context{DB: instance}); err != nil {
 		return fmt.Errorf("failed to run startup migrations: %w", err)
 	}
@@ -465,12 +467,5 @@ func doInitialize() error {
 	); err != nil {
 		logger.Errorf("dbcore", "Failed to create Session table, it may already exist: %v", err)
 	}
-	if err := instance.AutoMigrate(
-		&models.Task{},
-		&models.TaskResult{},
-	); err != nil {
-		logger.Errorf("dbcore", "Failed to create Task and TaskResult table, it may already exist: %v", err)
-	}
-
 	return nil
 }

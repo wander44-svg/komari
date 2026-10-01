@@ -139,7 +139,7 @@ func SendEvent(event models.EventMessage) error {
 	var err error
 	cfg, err := config.GetMany(map[string]any{
 		config.NotificationEnabledKey:  false,
-		config.NotificationTemplateKey: "{{emoji}}{{emoji}}{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\nTime: {{time}}",
+		config.NotificationTemplateKey: "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\nTime: {{time}}",
 	})
 	if err != nil {
 		return err

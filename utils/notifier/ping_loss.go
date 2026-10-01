@@ -116,11 +116,6 @@ func CheckPingLossNotification(record models.PingRecord) {
 			template = defaultLossRecoveryTemplate
 		}
 	}
-	// Upgrade the templates that were automatically stored by the previous
-	// version, while preserving any genuinely custom template.
-	if strings.HasPrefix(template, "⚠️ 丢包告警") || strings.HasPrefix(template, "✅ 丢包恢复") || template == "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}" {
-		template = defaultLossAlertTemplate
-	}
 	client, err := clients.GetClientByUUID(record.Client)
 	if err != nil {
 		return

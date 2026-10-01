@@ -54,32 +54,6 @@ func RunServer() {
 		}
 	}
 
-	for {
-		requirement, err := app.DatabaseMigrationRequired()
-		if err != nil {
-			completed, recoveryErr := app.RunMetricStoreRecovery(err)
-			if recoveryErr != nil {
-				_ = app.Shutdown()
-				logger.Fatalf("server", "server startup failed at %q: %v", "database-migration-detection-recovery", recoveryErr)
-			}
-			if !completed {
-				return
-			}
-			continue
-		}
-		if !requirement.Required() {
-			break
-		}
-		completed, err := app.RunDatabaseMigration(requirement)
-		if err != nil {
-			_ = app.Shutdown()
-			logger.Fatalf("server", "server startup failed at %q: %v", "run-database-migration", err)
-		}
-		if !completed {
-			return
-		}
-	}
-
 	// Metric store 是唯一允许进入恢复向导的启动阶段：主库已经在
 	// Bootstrap 中就绪，因此可以保留登录能力并让管理员修正 DSN。
 	if err := app.ConnectMetricStoreWithRetry(); err != nil {

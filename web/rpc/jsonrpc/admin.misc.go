@@ -144,6 +144,8 @@ var retiredConfigKeys = map[string]struct{}{
 	"o_auth_provider":        {},
 	"custom_head":            {},
 	"custom_body":            {},
+	"eula_accepted":          {},
+	"base_scripts_url":       {},
 }
 
 // metricKeysTouched 判断本次设置变更是否涉及 metrics 数据库相关键。
