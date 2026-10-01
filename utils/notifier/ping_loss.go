@@ -19,8 +19,8 @@ import (
 const (
 	defaultLossThreshold = 20.0
 	defaultLossWindow = 5
-	defaultLossAlertTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
-	defaultLossRecoveryTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
+	defaultLossAlertTemplate = "{{emoji}}\nClients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
+	defaultLossRecoveryTemplate = "{{emoji}}\nClients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
 )
 
 var pingLossMu sync.Mutex
@@ -92,14 +92,14 @@ func CheckPingLossNotification(record models.PingRecord) {
 		state.BelowCount = 0
 		if !state.AlertActive && state.AboveCount >= 2 {
 			state.AlertActive = true
-			eventName, emoji, template = messageevent.PacketLoss, "🔴", task.LossAlertTemplate
+			eventName, emoji, template = messageevent.PacketLoss, "⚠️", task.LossAlertTemplate
 		}
 	} else {
 		state.BelowCount++
 		state.AboveCount = 0
 		if state.AlertActive && state.BelowCount >= 2 {
 			state.AlertActive = false
-			eventName, emoji, template = messageevent.PacketLossRecovered, "🟢", task.LossRecoveryTemplate
+			eventName, emoji, template = messageevent.PacketLossRecovered, "✅", task.LossRecoveryTemplate
 		}
 	}
 	state.UpdatedAt = now
@@ -116,12 +116,17 @@ func CheckPingLossNotification(record models.PingRecord) {
 			template = defaultLossRecoveryTemplate
 		}
 	}
+	// Upgrade the templates that were automatically stored by the previous
+	// version, while preserving any genuinely custom template.
+	if strings.HasPrefix(template, "⚠️ 丢包告警") || strings.HasPrefix(template, "✅ 丢包恢复") || template == "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}" {
+		template = defaultLossAlertTemplate
+	}
 	client, err := clients.GetClientByUUID(record.Client)
 	if err != nil {
 		return
 	}
 	if err := messageSender.SendNotification(models.EventMessage{
-		Event: eventName, Title: emoji + " " + eventName, Emoji: emoji, Time: now, Template: template,
+		Event: eventName, Emoji: emoji, Time: now, Template: template,
 		Task: task.Name, LossRate: fmt.Sprintf("%.2f", lossRate),
 		Window: fmt.Sprintf("%d 分钟", windowMinutes), Message: task.Name,
 		Clients: []models.Client{client},

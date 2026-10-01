@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/komari-monitor/komari/database/dbcore"
@@ -11,6 +12,17 @@ import (
 	"github.com/komari-monitor/komari/utils"
 	"gorm.io/gorm"
 )
+
+const defaultPingLossTemplate = "{{emoji}}\nClients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
+
+func normalizePingLossTemplate(template string) string {
+	if strings.TrimSpace(template) == "" ||
+		template == "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}" ||
+		strings.HasPrefix(template, "⚠️ 丢包告警") || strings.HasPrefix(template, "✅ 丢包恢复") {
+		return defaultPingLossTemplate
+	}
+	return template
+}
 
 // DefaultPingTask describes a latency check created on a new installation.
 type DefaultPingTask struct {
@@ -76,12 +88,8 @@ func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, 
 	if lossWindow <= 0 {
 		lossWindow = 5
 	}
-	if alertTemplate == "" {
-		alertTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
-	}
-	if recoveryTemplate == "" {
-		recoveryTemplate = alertTemplate
-	}
+	alertTemplate = normalizePingLossTemplate(alertTemplate)
+	recoveryTemplate = normalizePingLossTemplate(recoveryTemplate)
 	task := models.PingTask{
 		Clients:   normalizedClients,
 		DefaultOn: defaultOn,
@@ -155,12 +163,8 @@ func EditPingTask(tasks []*models.PingTask) error {
 		if task.LossWindowMinutes <= 0 {
 			task.LossWindowMinutes = 5
 		}
-		if task.LossAlertTemplate == "" {
-			task.LossAlertTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
-		}
-		if task.LossRecoveryTemplate == "" {
-			task.LossRecoveryTemplate = task.LossAlertTemplate
-		}
+		task.LossAlertTemplate = normalizePingLossTemplate(task.LossAlertTemplate)
+		task.LossRecoveryTemplate = normalizePingLossTemplate(task.LossRecoveryTemplate)
 		// 使用 map 显式更新，避免 GORM struct Updates 跳过 false/0/空切片等零值。
 		updates := map[string]interface{}{
 			"name":        task.Name,
