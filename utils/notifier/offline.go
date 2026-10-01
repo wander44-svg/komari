@@ -36,7 +36,11 @@ func getNotificationConfig(clientID string) (*models.OfflineNotification, bool) 
 		return nil, false
 	}
 
-	notiConf := models.OfflineNotification{Client: clientID}
+	notiConf := models.OfflineNotification{
+		Client:      clientID,
+		Enable:      true,
+		GracePeriod: 180,
+	}
 	db := dbcore.GetDBInstance()
 	if err := db.Model(&models.OfflineNotification{}).Where("client = ?", clientID).FirstOrCreate(&notiConf).Error; err != nil {
 		logger.Errorf("notifier", "Failed to get or create offline notification config for client %s: %v", clientID, err)
