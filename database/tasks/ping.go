@@ -61,8 +61,21 @@ func EnsureDefaultPingTasks() error {
 
 // AddPingTask 创建延迟监测任务。defaultOn 表示新加入的服务器是否自动开启此监测。
 func AddPingTask(clients []string, defaultOn bool, name string, target, task_type string, interval int) (uint, error) {
+	return AddPingTaskWithLoss(clients, defaultOn, name, target, task_type, interval, false, 20, 5, nil, "", "")
+}
+
+// AddPingTaskWithLoss creates a task and its optional packet-loss settings in
+// one transaction, avoiding a partially configured notification task.
+func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, task_type string, interval int, lossEnabled bool, lossThreshold float64, lossWindow int, lossClients []string, alertTemplate, recoveryTemplate string) (uint, error) {
 	db := dbcore.GetDBInstance()
 	normalizedClients := normalizePingClients(models.StringArray(clients))
+	normalizedLossClients := normalizePingClients(models.StringArray(lossClients))
+	if lossThreshold <= 0 || lossThreshold > 100 {
+		lossThreshold = 20
+	}
+	if lossWindow <= 0 {
+		lossWindow = 5
+	}
 	task := models.PingTask{
 		Clients:   normalizedClients,
 		DefaultOn: defaultOn,
@@ -70,6 +83,12 @@ func AddPingTask(clients []string, defaultOn bool, name string, target, task_typ
 		Type:      task_type,
 		Target:    target,
 		Interval:  interval,
+		LossNotifyEnabled: lossEnabled,
+		LossThreshold: lossThreshold,
+		LossWindowMinutes: lossWindow,
+		LossClients: normalizedLossClients,
+		LossAlertTemplate: alertTemplate,
+		LossRecoveryTemplate: recoveryTemplate,
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&task).Error; err != nil {
@@ -103,6 +122,11 @@ func DeletePingTask(id []uint) error {
 
 	db := dbcore.GetDBInstance()
 	result := db.Where("id IN ?", id).Delete(&models.PingTask{})
+	// Notification state is keyed by task/client and has no database-level
+	// cascade, so remove it explicitly with the task.
+	if err := db.Where("task_id IN ?", id).Delete(&models.PingLossNotificationState{}).Error; err != nil {
+		return err
+	}
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}
@@ -115,6 +139,16 @@ func EditPingTask(tasks []*models.PingTask) error {
 	db := dbcore.GetDBInstance()
 	for _, task := range tasks {
 		task.Clients = normalizePingClients(task.Clients)
+		task.LossClients = normalizePingClients(task.LossClients)
+		if task.LossThreshold <= 0 {
+			task.LossThreshold = 20
+		}
+		if task.LossThreshold > 100 {
+			task.LossThreshold = 100
+		}
+		if task.LossWindowMinutes <= 0 {
+			task.LossWindowMinutes = 5
+		}
 		// 使用 map 显式更新，避免 GORM struct Updates 跳过 false/0/空切片等零值。
 		updates := map[string]interface{}{
 			"name":        task.Name,
@@ -123,10 +157,21 @@ func EditPingTask(tasks []*models.PingTask) error {
 			"type":        task.Type,
 			"target":      task.Target,
 			"interval":    task.Interval,
+			"loss_notify_enabled": task.LossNotifyEnabled,
+			"loss_threshold": task.LossThreshold,
+			"loss_window_minutes": task.LossWindowMinutes,
+			"loss_clients": task.LossClients,
+			"loss_alert_template": task.LossAlertTemplate,
+			"loss_recovery_template": task.LossRecoveryTemplate,
 		}
 		result := db.Model(&models.PingTask{}).Where("id = ?", task.Id).Updates(updates)
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
+		}
+		if !task.LossNotifyEnabled {
+			if err := db.Where("task_id = ?", task.Id).Delete(&models.PingLossNotificationState{}).Error; err != nil {
+				return err
+			}
 		}
 	}
 	ReloadPingSchedule()

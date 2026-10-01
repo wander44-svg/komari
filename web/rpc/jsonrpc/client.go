@@ -7,6 +7,7 @@ import (
 	"github.com/komari-monitor/komari/database/models"
 	"github.com/komari-monitor/komari/database/tasks"
 	"github.com/komari-monitor/komari/pkg/rpc"
+	"github.com/komari-monitor/komari/utils/notifier"
 )
 
 // client.go
@@ -60,5 +61,9 @@ func clientUploadPingResult(ctx context.Context, req *rpc.JsonRpcRequest) (any, 
 	if err := tasks.SavePingRecord(record); err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to save ping result: "+err.Error(), nil)
 	}
+	go func() {
+		time.Sleep(3500 * time.Millisecond)
+		notifier.CheckPingLossNotification(record)
+	}()
 	return map[string]any{"status": "success"}, nil
 }

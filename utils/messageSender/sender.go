@@ -147,6 +147,12 @@ func SendEvent(event models.EventMessage) error {
 	if !cfg[config.NotificationEnabledKey].(bool) {
 		return nil
 	}
+	// Custom per-event templates (used by ping-loss notifications) are sent as
+	// text so providers such as Telegram do not need a second event protocol.
+	if event.Template != "" {
+		message := parseTemplate(event.Template, event)
+		return SendTextMessage(message, fmt.Sprint(event.Event))
+	}
 
 	// 检查提供者是否实现了 IEventMessageSender 接口
 	if eventSender, ok := CurrentProvider().(factory.IEventMessageSender); ok {
@@ -200,6 +206,11 @@ func parseTemplate(messageTemplate string, event any) string {
 		if field.Name == "Clients" {
 			result = strings.ReplaceAll(result, "{{client}}", value)
 		}
+		// Custom notification templates use readable snake_case names for the
+		// additional packet-loss fields.
+		if field.Name == "LossRate" {
+			result = strings.ReplaceAll(result, "{{loss_rate}}", value)
+		}
 	}
 	return result
 }
@@ -217,6 +228,10 @@ func formatTemplateField(fieldName string, v reflect.Value) string {
 	switch v.Kind() {
 	case reflect.String:
 		return v.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprint(v.Int())
+	case reflect.Float32, reflect.Float64:
+		return fmt.Sprint(v.Float())
 	case reflect.Slice:
 		if fieldName == "Clients" {
 			clientNames := make([]string, 0, v.Len())

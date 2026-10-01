@@ -10,6 +10,7 @@ import (
 	"github.com/komari-monitor/komari/database/tasks"
 	v1 "github.com/komari-monitor/komari/protocol/v1"
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
+	"github.com/komari-monitor/komari/utils/notifier"
 )
 
 // ingest.go
@@ -44,10 +45,20 @@ func ingestBasicInfo(uuid string, info map[string]interface{}, fallbackIP string
 
 // ingestPingResult 保存一条 ping 探测结果。
 func ingestPingResult(uuid string, taskID uint, value int) error {
-	return tasks.SavePingRecord(models.PingRecord{
+	record := models.PingRecord{
 		Client: uuid,
 		TaskId: taskID,
 		Value:  value,
 		Time:   time.Now().UTC(),
-	})
+	}
+	if err := tasks.SavePingRecord(record); err != nil {
+		return err
+	}
+	go func() {
+		// The metric batcher may flush asynchronously; evaluate after the sample
+		// has had a chance to become queryable.
+		time.Sleep(3500 * time.Millisecond)
+		notifier.CheckPingLossNotification(record)
+	}()
+	return nil
 }

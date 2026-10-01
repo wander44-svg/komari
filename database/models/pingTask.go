@@ -21,6 +21,25 @@ type PingTask struct {
 	Type      string      `json:"type" gorm:"type:varchar(12);not null;default:'icmp'"`        // icmp tcp http
 	Target    string      `json:"target" gorm:"type:varchar(255);not null"`                    // Ping 目标地址
 	Interval  int         `json:"interval" gorm:"type:int;not null;default:60"`                // 间隔时间
+	LossNotifyEnabled    bool        `json:"loss_notify_enabled" gorm:"not null;default:false"`
+	LossThreshold        float64     `json:"loss_threshold" gorm:"not null;default:20"`
+	LossWindowMinutes    int         `json:"loss_window_minutes" gorm:"not null;default:5"`
+	LossClients          StringArray `json:"loss_clients" gorm:"type:longtext"`
+	LossAlertTemplate    string      `json:"loss_alert_template" gorm:"type:text"`
+	LossRecoveryTemplate string      `json:"loss_recovery_template" gorm:"type:text"`
+}
+
+// PingLossNotificationState stores debounce state for one task/client pair.
+// Persisting it prevents a restart from sending a duplicate alert for the
+// same sustained incident.
+type PingLossNotificationState struct {
+	Id          uint      `json:"id,omitempty" gorm:"primaryKey;autoIncrement"`
+	TaskId      uint      `json:"task_id" gorm:"not null;uniqueIndex:idx_ping_loss_state"`
+	Client      string    `json:"client" gorm:"type:varchar(36);not null;uniqueIndex:idx_ping_loss_state"`
+	AlertActive bool      `json:"alert_active" gorm:"not null;default:false"`
+	AboveCount  int       `json:"above_count" gorm:"not null;default:0"`
+	BelowCount  int       `json:"below_count" gorm:"not null;default:0"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`
 }
 
 // AppliesToClient 判断当前 PingTask 是否适用于指定服务器。
