@@ -39,7 +39,7 @@ func getNotificationConfig(clientID string) (*models.OfflineNotification, bool) 
 	notiConf := models.OfflineNotification{
 		Client:      clientID,
 		Enable:      true,
-		GracePeriod: 180,
+		GracePeriod: 300,
 	}
 	db := dbcore.GetDBInstance()
 	if err := db.Model(&models.OfflineNotification{}).Where("client = ?", clientID).FirstOrCreate(&notiConf).Error; err != nil {
