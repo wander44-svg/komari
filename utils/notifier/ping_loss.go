@@ -92,14 +92,14 @@ func CheckPingLossNotification(record models.PingRecord) {
 		state.BelowCount = 0
 		if !state.AlertActive && state.AboveCount >= 2 {
 			state.AlertActive = true
-			eventName, emoji, template = messageEvent.PacketLoss, "⚠️", task.LossAlertTemplate
+			eventName, emoji, template = messageevent.PacketLoss, "⚠️", task.LossAlertTemplate
 		}
 	} else {
 		state.BelowCount++
 		state.AboveCount = 0
 		if state.AlertActive && state.BelowCount >= 2 {
 			state.AlertActive = false
-			eventName, emoji, template = messageEvent.PacketLossRecovered, "✅", task.LossRecoveryTemplate
+			eventName, emoji, template = messageevent.PacketLossRecovered, "✅", task.LossRecoveryTemplate
 		}
 	}
 	state.UpdatedAt = now
@@ -110,7 +110,7 @@ func CheckPingLossNotification(record models.PingRecord) {
 		return
 	}
 	if strings.TrimSpace(template) == "" {
-		if eventName == messageEvent.PacketLoss {
+		if eventName == messageevent.PacketLoss {
 			template = defaultLossAlertTemplate
 		} else {
 			template = defaultLossRecoveryTemplate
