@@ -71,6 +71,15 @@ func registerAdminRoutes(r *gin.Engine) {
 	admin.RegisterPprofRoutes(g)
 
 	// --- 二进制/流/重定向类，保留 REST handler ---
+	g.GET("/download/backup", admin.DownloadBackup)
+	uploadHandler := admin.NewArchiveUploadHandler()
+	uploadGroup := g.Group("/upload")
+	{
+		uploadGroup.POST("/init", uploadHandler.Init)
+		uploadGroup.POST("/chunk", uploadHandler.Chunk)
+		uploadGroup.POST("/merge", uploadHandler.Merge)
+		uploadGroup.POST("/cancel", uploadHandler.Cancel)
+	}
 	g.GET("/test/geoip", jsonRpc.Bind("admin:testGeoip", jsonRpc.WithQuery("ip")))
 	g.POST("/test/sendMessage", jsonRpc.Bind("admin:testSendMessage"))
 	g.POST("/update/mmdb", admin.UpdateMmdbGeoIP)
