@@ -20,7 +20,7 @@ Komari is a lightweight, self-hosted server monitoring solution. It provides a s
 - **Lightweight and efficient**: Uses minimal system resources and works well on servers of any size.
 - **Self-hosted**: Keeps you in control of your data and privacy.
 - **Web interface**: Provides an intuitive, easy-to-use monitoring dashboard.
-- **Extensible**: Supports custom themes and plugins.
+- **Extensible**: Supports custom themes.
 
 ## Quick Start
 
@@ -53,7 +53,7 @@ Interested in sponsoring Komari? Contact the developer via [email](mailto:komari
 
 ## Contributors
 
-Thanks to everyone who has contributed code, themes, plugins, documentation, translations, bug reports, or feedback to Komari.
+Thanks to everyone who has contributed code, themes, documentation, translations, bug reports, or feedback to Komari.
 
 <a href="https://github.com/komari-monitor/komari/graphs/contributors"><img src="https://contributors-img.web.app/image?repo=komari-monitor/komari" alt="Komari contributors" width="600"></a>
 

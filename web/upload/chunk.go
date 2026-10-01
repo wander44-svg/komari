@@ -20,7 +20,6 @@ type Purpose string
 
 const (
 	PurposeBackup Purpose = "backup"
-	PurposePlugin Purpose = "plugin"
 	PurposeTheme  Purpose = "theme"
 )
 
@@ -201,7 +200,7 @@ func (s *Store) load(uploadID string) (Session, error) {
 }
 
 func isKnownPurpose(purpose Purpose) bool {
-	return purpose == PurposeBackup || purpose == PurposePlugin || purpose == PurposeTheme
+	return purpose == PurposeBackup || purpose == PurposeTheme
 }
 
 func validUploadID(uploadID string) bool {

@@ -1,5 +1,5 @@
 // Package managedconfig implements the shared managed-configuration behavior
-// used by themes and plugins.
+// used by managed themes.
 package managedconfig
 
 import (
@@ -56,7 +56,7 @@ func DefaultValue(item models.ManagedThemeConfigurationItem) any {
 }
 
 // ResolveForOutput decodes declared selectors, drops deleted references, and
-// returns typed arrays suitable for public theme settings and plugin config.
+// returns typed arrays suitable for public theme settings.
 func ResolveForOutput(values map[string]any, items []models.ManagedThemeConfigurationItem) error {
 	hasNodes := false
 	hasPingTasks := false

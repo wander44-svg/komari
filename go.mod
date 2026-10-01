@@ -3,8 +3,6 @@ module github.com/komari-monitor/komari
 go 1.25.0
 
 require (
-	github.com/dop251/goja v0.0.0-20251008123653-cf18d89f3cf6
-	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
@@ -21,8 +19,6 @@ require (
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.26.1
 )
-
-require github.com/dop251/base64dec v0.0.0-20231022112746-c6c9f9a96217 // indirect
 
 // Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto #1
 // golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange #3

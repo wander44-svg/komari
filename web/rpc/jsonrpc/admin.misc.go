@@ -144,7 +144,6 @@ var retiredConfigKeys = map[string]struct{}{
 	"o_auth_provider":        {},
 	"custom_head":            {},
 	"custom_body":            {},
-	"plugin_market_sources":  {},
 }
 
 // metricKeysTouched 判断本次设置变更是否涉及 metrics 数据库相关键。

@@ -3,13 +3,13 @@ package migrations
 import (
 	"encoding/json"
 	"fmt"
-	logger "github.com/komari-monitor/komari/utils/log"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/komari-monitor/komari/database/models"
 	appconfig "github.com/komari-monitor/komari/internal/config"
+	logger "github.com/komari-monitor/komari/utils/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -27,11 +27,7 @@ type legacyModelConfig struct {
 	EulaAccepted               bool    `json:"eula_accepted" gorm:"default:false"`
 	GeoIpEnabled               bool    `json:"geo_ip_enabled" gorm:"default:true"`
 	GeoIpProvider              string  `json:"geo_ip_provider" gorm:"type:varchar(20);default:'ip-api'"`
-	OAuthEnabled               bool    `json:"o_auth_enabled" gorm:"default:false"`
-	OAuthProvider              string  `json:"o_auth_provider" gorm:"type:varchar(50);default:'github'"`
 	DisablePasswordLogin       bool    `json:"disable_password_login" gorm:"default:false"`
-	CustomHead                 string  `json:"custom_head" gorm:"type:longtext"`
-	CustomBody                 string  `json:"custom_body" gorm:"type:longtext"`
 	NotificationEnabled        bool    `json:"notification_enabled" gorm:"default:false"`
 	NotificationMethod         string  `json:"notification_method" gorm:"type:varchar(64);default:'none'"`
 	NotificationTemplate       string  `json:"notification_template" gorm:"type:longtext;default:'{{emoji}}{{emoji}}{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\nTime: {{time}}'"`
@@ -61,11 +57,7 @@ type legacyConfig struct {
 	BaseScriptsURLKey          string    `json:"base_scripts_url"`
 	GeoIpEnabled               bool      `json:"geo_ip_enabled"`
 	GeoIpProvider              string    `json:"geo_ip_provider"`
-	OAuthEnabled               bool      `json:"o_auth_enabled"`
-	OAuthProvider              string    `json:"o_auth_provider"`
 	DisablePasswordLogin       bool      `json:"disable_password_login"`
-	CustomHead                 string    `json:"custom_head"`
-	CustomBody                 string    `json:"custom_body"`
 	NotificationEnabled        bool      `json:"notification_enabled"`
 	NotificationMethod         string    `json:"notification_method"`
 	NotificationTemplate       string    `json:"notification_template"`
@@ -102,9 +94,6 @@ func Run(ctx Context) error {
 	}
 
 	if legacyConfigTable {
-		if err := migrateLegacyOidcConfig(db); err != nil {
-			return err
-		}
 		if err := migrateLegacyMessageSenderConfig(db); err != nil {
 			return err
 		}
@@ -129,10 +118,27 @@ func Run(ctx Context) error {
 	if err := migrateRemovedCompatibilityConfig(db); err != nil {
 		return err
 	}
+	if err := dropRemovedFeatureTables(db); err != nil {
+		return err
+	}
 	if err := markTimestampMigrationDone(db); err != nil {
 		return fmt.Errorf("mark UTC timestamp migration done: %w", err)
 	}
 
+	return nil
+}
+
+// dropRemovedFeatureTables removes tables that belonged exclusively to
+// disabled integrations. Keeping these tables around would leave stale data
+// structures even though the corresponding runtime and API no longer exist.
+func dropRemovedFeatureTables(db *gorm.DB) error {
+	for _, table := range []string{"clipboards", "plugin_configurations", "oidc_providers"} {
+		if db.Migrator().HasTable(table) {
+			if err := db.Migrator().DropTable(table); err != nil {
+				return fmt.Errorf("drop removed table %s: %w", table, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -181,43 +187,6 @@ func migrateLegacyLoadNotification(db *gorm.DB) error {
 		return db.Migrator().DropTable(&models.LoadNotification{})
 	}
 	return nil
-}
-
-func migrateLegacyOidcConfig(db *gorm.DB) error {
-	if db.Migrator().HasTable(&models.OidcProvider{}) {
-		return nil
-	}
-
-	logger.InfoArgs("migration", "[>1.0.2] Merge OidcProvider table....")
-	var oldData struct {
-		OAuthClientID     string `gorm:"column:o_auth_client_id"`
-		OAuthClientSecret string `gorm:"column:o_auth_client_secret"`
-	}
-	if err := db.Raw("SELECT * FROM configs LIMIT 1").Scan(&oldData).Error; err != nil {
-		return fmt.Errorf("get legacy OIDC config: %w", err)
-	}
-
-	if err := db.AutoMigrate(&models.OidcProvider{}); err != nil {
-		return err
-	}
-	addition, err := json.Marshal(map[string]string{
-		"client_id":     oldData.OAuthClientID,
-		"client_secret": oldData.OAuthClientSecret,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal legacy OIDC config: %w", err)
-	}
-	if err := db.Save(&models.OidcProvider{
-		Name:     "github",
-		Addition: string(addition),
-	}).Error; err != nil {
-		return err
-	}
-
-	if err := db.AutoMigrate(&legacyModelConfig{}); err != nil {
-		return err
-	}
-	return db.Model(&legacyModelConfig{}).Where("id = 1").Update("o_auth_provider", "github").Error
 }
 
 func migrateLegacyMessageSenderConfig(db *gorm.DB) error {

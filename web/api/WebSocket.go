@@ -1,10 +1,8 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -36,40 +34,13 @@ func UpgradeWebSocket(c *gin.Context, options ...WebSocketUpgradeOption) (*webso
 	return upgrader.Upgrade(c.Writer, c.Request, nil)
 }
 
-// UpgradeSafeConn upgrades the request to a WebSocket and attaches the
-// process-wide plugin frame interceptor (when one is wired). A plugin
-// wsConnect hook may deny the connection: the peer receives a
-// policy-violation close frame and the caller gets an error.
+// UpgradeSafeConn upgrades the request to a bounded, concurrency-safe WebSocket.
 func UpgradeSafeConn(c *gin.Context, options ...WebSocketUpgradeOption) (*connection.SafeConn, error) {
 	unsafeConn, err := UpgradeWebSocket(c, options...)
 	if err != nil {
 		return nil, err
 	}
-	interceptor := connection.Interceptor()
-	if interceptor == nil {
-		return connection.NewSafeConn(unsafeConn), nil
-	}
-	sc := connection.NewSafeConn(unsafeConn)
-	info := &connection.ConnInfo{
-		ID:        sc.ID,
-		Path:      c.Request.URL.Path,
-		RemoteIP:  c.ClientIP(),
-		UserAgent: c.Request.UserAgent(),
-	}
-	if clientUUID, ok := c.Get("client_uuid"); ok {
-		if s, ok := clientUUID.(string); ok {
-			info.ClientUUID = s
-		}
-	}
-	if deny, reason := interceptor.OnConnect(info); deny {
-		_ = unsafeConn.WriteControl(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, reason),
-			time.Now().Add(time.Second))
-		_ = unsafeConn.Close()
-		return nil, errors.New("websocket connection denied by plugin")
-	}
-	sc.SetInterceptor(info, interceptor)
-	return sc, nil
+	return connection.NewSafeConn(unsafeConn), nil
 }
 
 func CheckWebSocketOrigin(r *http.Request) bool {

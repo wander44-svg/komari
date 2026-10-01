@@ -55,27 +55,12 @@ func TestRunSkipsLegacyConfigMigrationForCurrentConfigItemTable(t *testing.T) {
 	if err := db.AutoMigrate(&appconfig.ConfigItem{}); err != nil {
 		t.Fatalf("migrate config item table: %v", err)
 	}
-	if err := db.Create(&appconfig.ConfigItem{Key: "o_auth_provider", Value: `"github"`}).Error; err != nil {
-		t.Fatalf("seed config item: %v", err)
-	}
-
 	if err := Run(Context{DB: db}); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 
 	if db.Migrator().HasColumn(&legacyModelConfig{}, "id") {
 		t.Fatal("config item table was changed into the legacy config shape")
-	}
-	if db.Migrator().HasTable(&models.OidcProvider{}) {
-		t.Fatal("legacy OIDC migration ran against the config item table")
-	}
-
-	var item appconfig.ConfigItem
-	if err := db.First(&item, "key = ?", "o_auth_provider").Error; err != nil {
-		t.Fatalf("config item was not preserved: %v", err)
-	}
-	if item.Value != `"github"` {
-		t.Fatalf("unexpected config value: %s", item.Value)
 	}
 }
 
@@ -137,7 +122,6 @@ func TestRunPreservesVersion120RuntimeShape(t *testing.T) {
 	db := openTestDB(t, "migrations_v120_runtime_shape")
 	if err := db.AutoMigrate(
 		&appconfig.ConfigItem{},
-		&models.OidcProvider{},
 		&models.MessageSenderProvider{},
 		&models.Client{},
 		&models.PingTask{},
@@ -158,12 +142,6 @@ func TestRunPreservesVersion120RuntimeShape(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed ping task: %v", err)
 	}
-	if err := db.Create(&appconfig.ConfigItem{Key: appconfig.OAuthProviderKey, Value: `"github"`}).Error; err != nil {
-		t.Fatalf("seed config item: %v", err)
-	}
-	if err := db.Create(&models.OidcProvider{Name: "github", Addition: `{"client_id":"old","client_secret":"secret"}`}).Error; err != nil {
-		t.Fatalf("seed oidc provider: %v", err)
-	}
 	if err := db.Create(&models.MessageSenderProvider{Name: "telegram", Addition: `{"bot_token":"old-token"}`}).Error; err != nil {
 		t.Fatalf("seed message sender provider: %v", err)
 	}
@@ -174,22 +152,6 @@ func TestRunPreservesVersion120RuntimeShape(t *testing.T) {
 
 	if db.Migrator().HasColumn(&legacyModelConfig{}, "sitename") {
 		t.Fatal("current config item table was treated as legacy wide config")
-	}
-
-	var configItem appconfig.ConfigItem
-	if err := db.First(&configItem, "key = ?", appconfig.OAuthProviderKey).Error; err != nil {
-		t.Fatalf("find config item: %v", err)
-	}
-	if configItem.Value != `"github"` {
-		t.Fatalf("unexpected config item value: %s", configItem.Value)
-	}
-
-	var oidc models.OidcProvider
-	if err := db.First(&oidc, "name = ?", "github").Error; err != nil {
-		t.Fatalf("find oidc provider: %v", err)
-	}
-	if oidc.Addition != `{"client_id":"old","client_secret":"secret"}` {
-		t.Fatalf("oidc provider was unexpectedly changed: %s", oidc.Addition)
 	}
 
 	var sender models.MessageSenderProvider
@@ -220,7 +182,6 @@ func TestRunMigratesLegacyConfigTableToConfigItems(t *testing.T) {
 		Theme:                      "classic",
 		GeoIpEnabled:               true,
 		GeoIpProvider:              "ip-api",
-		OAuthProvider:              "github",
 		NotificationMethod:         "none",
 		TrafficLimitPercentage:     66.5,
 		ExpireNotificationLeadDays: 3,
