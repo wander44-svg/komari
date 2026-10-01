@@ -151,7 +151,11 @@ func SendEvent(event models.EventMessage) error {
 	// text so providers such as Telegram do not need a second event protocol.
 	if event.Template != "" {
 		message := parseTemplate(event.Template, event)
-		return SendTextMessage(message, fmt.Sprint(event.Event))
+		title := event.Title
+		if title == "" {
+			title = fmt.Sprint(event.Event)
+		}
+		return SendTextMessage(message, title)
 	}
 
 	// 检查提供者是否实现了 IEventMessageSender 接口

@@ -76,6 +76,12 @@ func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, 
 	if lossWindow <= 0 {
 		lossWindow = 5
 	}
+	if alertTemplate == "" {
+		alertTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
+	}
+	if recoveryTemplate == "" {
+		recoveryTemplate = alertTemplate
+	}
 	task := models.PingTask{
 		Clients:   normalizedClients,
 		DefaultOn: defaultOn,
@@ -148,6 +154,12 @@ func EditPingTask(tasks []*models.PingTask) error {
 		}
 		if task.LossWindowMinutes <= 0 {
 			task.LossWindowMinutes = 5
+		}
+		if task.LossAlertTemplate == "" {
+			task.LossAlertTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
+		}
+		if task.LossRecoveryTemplate == "" {
+			task.LossRecoveryTemplate = task.LossAlertTemplate
 		}
 		// 使用 map 显式更新，避免 GORM struct Updates 跳过 false/0/空切片等零值。
 		updates := map[string]interface{}{

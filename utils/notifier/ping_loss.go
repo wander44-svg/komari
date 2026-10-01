@@ -19,8 +19,8 @@ import (
 const (
 	defaultLossThreshold = 20.0
 	defaultLossWindow = 5
-	defaultLossAlertTemplate = "⚠️ 丢包告警\n任务：{{task}}\n服务器：{{client}}\n丢包率：{{loss_rate}}%\n统计窗口：{{window}}\n时间：{{time}}"
-	defaultLossRecoveryTemplate = "✅ 丢包恢复\n任务：{{task}}\n服务器：{{client}}\n当前丢包率：{{loss_rate}}%\n统计窗口：{{window}}\n时间：{{time}}"
+	defaultLossAlertTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
+	defaultLossRecoveryTemplate = "Clients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
 )
 
 var pingLossMu sync.Mutex
@@ -92,14 +92,14 @@ func CheckPingLossNotification(record models.PingRecord) {
 		state.BelowCount = 0
 		if !state.AlertActive && state.AboveCount >= 2 {
 			state.AlertActive = true
-			eventName, emoji, template = messageevent.PacketLoss, "⚠️", task.LossAlertTemplate
+			eventName, emoji, template = messageevent.PacketLoss, "🔴", task.LossAlertTemplate
 		}
 	} else {
 		state.BelowCount++
 		state.AboveCount = 0
 		if state.AlertActive && state.BelowCount >= 2 {
 			state.AlertActive = false
-			eventName, emoji, template = messageevent.PacketLossRecovered, "✅", task.LossRecoveryTemplate
+			eventName, emoji, template = messageevent.PacketLossRecovered, "🟢", task.LossRecoveryTemplate
 		}
 	}
 	state.UpdatedAt = now
@@ -121,7 +121,7 @@ func CheckPingLossNotification(record models.PingRecord) {
 		return
 	}
 	if err := messageSender.SendNotification(models.EventMessage{
-		Event: eventName, Emoji: emoji, Time: now, Template: template,
+		Event: eventName, Title: emoji + " " + eventName, Emoji: emoji, Time: now, Template: template,
 		Task: task.Name, LossRate: fmt.Sprintf("%.2f", lossRate),
 		Window: fmt.Sprintf("%d 分钟", windowMinutes), Message: task.Name,
 		Clients: []models.Client{client},

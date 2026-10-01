@@ -13,6 +13,7 @@ type EventMessage struct {
 	Time    time.Time `json:"time"`
 	Message any       `json:"message"`
 	Emoji   any       `json:"emoji"`
+	Title   string    `json:"title,omitempty"`
 	// Template is optional. When set, the sender renders this event with the
 	// supplied template before dispatching it as a text notification.
 	Template string `json:"template,omitempty"`
