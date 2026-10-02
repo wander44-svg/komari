@@ -139,7 +139,7 @@ func SendEvent(event models.EventMessage) error {
 	var err error
 	cfg, err := config.GetMany(map[string]any{
 		config.NotificationEnabledKey:  false,
-		config.NotificationTemplateKey: "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\nTime: {{time}}",
+		config.NotificationTemplateKey: "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\n{{threshold_line}}Time: {{time}}",
 	})
 	if err != nil {
 		return err
@@ -147,17 +147,6 @@ func SendEvent(event models.EventMessage) error {
 	if !cfg[config.NotificationEnabledKey].(bool) {
 		return nil
 	}
-	// Custom per-event templates (used by ping-loss notifications) are sent as
-	// text so providers such as Telegram do not need a second event protocol.
-	if event.Template != "" {
-		message := parseTemplate(event.Template, event)
-		title := event.Title
-		if title == "" {
-			title = fmt.Sprint(event.Event)
-		}
-		return SendTextMessage(message, title)
-	}
-
 	// 检查提供者是否实现了 IEventMessageSender 接口
 	if eventSender, ok := CurrentProvider().(factory.IEventMessageSender); ok {
 		// 如果实现了,直接调用 SendEvent
@@ -202,6 +191,19 @@ func parseTemplate(messageTemplate string, event any) string {
 	}
 	eventType := eventValue.Type()
 	result := messageTemplate
+	thresholdLine := ""
+	if eventValue.FieldByName("Threshold").IsValid() {
+		if value := formatTemplateField("Threshold", eventValue.FieldByName("Threshold")); value != "" {
+			thresholdLine = "Threshold: " + value
+		}
+	}
+	result = strings.ReplaceAll(result, "{{threshold_line}}\n", func() string {
+		if thresholdLine == "" {
+			return ""
+		}
+		return thresholdLine + "\n"
+	}())
+	result = strings.ReplaceAll(result, "{{threshold_line}}", thresholdLine)
 	for i := 0; i < eventType.NumField(); i++ {
 		field := eventType.Field(i)
 		placeholder := "{{" + strings.ToLower(field.Name) + "}}"
@@ -209,11 +211,6 @@ func parseTemplate(messageTemplate string, event any) string {
 		result = strings.ReplaceAll(result, placeholder, value)
 		if field.Name == "Clients" {
 			result = strings.ReplaceAll(result, "{{client}}", value)
-		}
-		// Custom notification templates use readable snake_case names for the
-		// additional packet-loss fields.
-		if field.Name == "LossRate" {
-			result = strings.ReplaceAll(result, "{{loss_rate}}", value)
 		}
 	}
 	return result

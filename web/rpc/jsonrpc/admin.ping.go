@@ -51,8 +51,6 @@ func adminAddPingTask(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.Jso
 		LossThreshold float64 `json:"loss_threshold"`
 		LossWindowMinutes int `json:"loss_window_minutes"`
 		LossClients []string `json:"loss_clients"`
-		LossAlertTemplate string `json:"loss_alert_template"`
-		LossRecoveryTemplate string `json:"loss_recovery_template"`
 	}
 	req.BindParams(&params)
 	if params.Name == "" || params.Target == "" || params.TaskType == "" || params.Interval == 0 {
@@ -61,7 +59,7 @@ func adminAddPingTask(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.Jso
 	if !params.DefaultOn && len(params.Clients) == 0 {
 		return nil, rpc.MakeError(rpc.InvalidParams, "clients is required when default_on is false", nil)
 	}
-	taskID, err := tasks.AddPingTaskWithLoss(params.Clients, params.DefaultOn, params.Name, params.Target, params.TaskType, params.Interval, params.LossNotifyEnabled, params.LossThreshold, params.LossWindowMinutes, params.LossClients, params.LossAlertTemplate, params.LossRecoveryTemplate)
+	taskID, err := tasks.AddPingTaskWithLoss(params.Clients, params.DefaultOn, params.Name, params.Target, params.TaskType, params.Interval, params.LossNotifyEnabled, params.LossThreshold, params.LossWindowMinutes, params.LossClients)
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}

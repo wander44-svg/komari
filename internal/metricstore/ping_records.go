@@ -3,6 +3,7 @@ package metricstore
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -116,6 +117,66 @@ func GetPingRecords(ctx context.Context, clientUUID string, taskID int, start, e
 	})
 
 	return records, nil
+}
+
+// GetPingLossStats returns the loss count and sample count for a window.
+// Recent windows are read from the exact in-memory samples so a minute rollup
+// cannot hide an intermediate failure or turn one into a whole-minute loss.
+// When exact samples are no longer retained, the loss metric's rollups are
+// used and weighted by their sample counts.
+func GetPingLossStats(ctx context.Context, clientUUID string, taskID int, start, end time.Time) (lost, total int, err error) {
+	s := GetStore()
+	if s == nil {
+		return 0, 0, fmt.Errorf("metric store not enabled")
+	}
+	query := metric.Query{
+		MetricName: MetricPingLoss,
+		EntityID:   clientUUID,
+		Start:      start,
+		End:        end,
+		Order:      metric.OrderAsc,
+	}
+	if taskID >= 0 {
+		query.Tags = map[string]string{"task_id": fmt.Sprintf("%d", taskID)}
+	}
+	// Query() only covers the fixed ten-minute exact-sample window. Do not use
+	// it for a larger configured window, otherwise older samples would be
+	// silently omitted from the denominator.
+	if end.Sub(start) <= DefaultRollupRawRetention {
+		points, queryErr := s.Query(ctx, query)
+		if queryErr != nil {
+			return 0, 0, queryErr
+		}
+		if len(points) > 0 {
+			for _, point := range points {
+				total++
+				if point.Value >= 0.5 {
+					lost++
+				}
+			}
+			return lost, total, nil
+		}
+	}
+
+	interval := pingQueryInterval(end.Sub(start), 4000)
+	interval = s.CompatibleSeriesInterval(start, time.Now().UTC(), interval)
+	rollups, err := s.Series(ctx, metric.AggregateQuery{
+		Query:          query,
+		Aggregation:    metric.AggAvg,
+		Interval:       interval,
+		PreserveSeries: true,
+	}, time.Now().UTC())
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, point := range rollups {
+		if point.Count <= 0 {
+			continue
+		}
+		total += point.Count
+		lost += int(math.Round(point.Value * float64(point.Count)))
+	}
+	return lost, total, nil
 }
 
 func pingQueryInterval(rangeDuration time.Duration, maxPoints int) time.Duration {

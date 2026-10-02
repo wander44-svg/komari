@@ -3,7 +3,6 @@ package tasks
 import (
 	"context"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/komari-monitor/komari/database/dbcore"
@@ -12,15 +11,6 @@ import (
 	"github.com/komari-monitor/komari/utils"
 	"gorm.io/gorm"
 )
-
-const defaultPingLossTemplate = "{{emoji}}\nClients: {{client}}\nMessage: {{task}}\nLossRate: {{loss_rate}}\nTime: {{time}}"
-
-func normalizePingLossTemplate(template string) string {
-	if strings.TrimSpace(template) == "" {
-		return defaultPingLossTemplate
-	}
-	return template
-}
 
 // DefaultPingTask describes a latency check created on a new installation.
 type DefaultPingTask struct {
@@ -71,12 +61,12 @@ func EnsureDefaultPingTasks() error {
 
 // AddPingTask 创建延迟监测任务。defaultOn 表示新加入的服务器是否自动开启此监测。
 func AddPingTask(clients []string, defaultOn bool, name string, target, task_type string, interval int) (uint, error) {
-	return AddPingTaskWithLoss(clients, defaultOn, name, target, task_type, interval, false, 20, 5, nil, "", "")
+	return AddPingTaskWithLoss(clients, defaultOn, name, target, task_type, interval, false, 20, 5, nil)
 }
 
 // AddPingTaskWithLoss creates a task and its optional packet-loss settings in
 // one transaction, avoiding a partially configured notification task.
-func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, task_type string, interval int, lossEnabled bool, lossThreshold float64, lossWindow int, lossClients []string, alertTemplate, recoveryTemplate string) (uint, error) {
+func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, task_type string, interval int, lossEnabled bool, lossThreshold float64, lossWindow int, lossClients []string) (uint, error) {
 	db := dbcore.GetDBInstance()
 	normalizedClients := normalizePingClients(models.StringArray(clients))
 	normalizedLossClients := normalizePingClients(models.StringArray(lossClients))
@@ -86,8 +76,6 @@ func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, 
 	if lossWindow <= 0 {
 		lossWindow = 5
 	}
-	alertTemplate = normalizePingLossTemplate(alertTemplate)
-	recoveryTemplate = normalizePingLossTemplate(recoveryTemplate)
 	task := models.PingTask{
 		Clients:   normalizedClients,
 		DefaultOn: defaultOn,
@@ -99,8 +87,6 @@ func AddPingTaskWithLoss(clients []string, defaultOn bool, name string, target, 
 		LossThreshold: lossThreshold,
 		LossWindowMinutes: lossWindow,
 		LossClients: normalizedLossClients,
-		LossAlertTemplate: alertTemplate,
-		LossRecoveryTemplate: recoveryTemplate,
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&task).Error; err != nil {
@@ -161,8 +147,6 @@ func EditPingTask(tasks []*models.PingTask) error {
 		if task.LossWindowMinutes <= 0 {
 			task.LossWindowMinutes = 5
 		}
-		task.LossAlertTemplate = normalizePingLossTemplate(task.LossAlertTemplate)
-		task.LossRecoveryTemplate = normalizePingLossTemplate(task.LossRecoveryTemplate)
 		// 使用 map 显式更新，避免 GORM struct Updates 跳过 false/0/空切片等零值。
 		updates := map[string]interface{}{
 			"name":        task.Name,
@@ -175,8 +159,6 @@ func EditPingTask(tasks []*models.PingTask) error {
 			"loss_threshold": task.LossThreshold,
 			"loss_window_minutes": task.LossWindowMinutes,
 			"loss_clients": task.LossClients,
-			"loss_alert_template": task.LossAlertTemplate,
-			"loss_recovery_template": task.LossRecoveryTemplate,
 		}
 		result := db.Model(&models.PingTask{}).Where("id = ?", task.Id).Updates(updates)
 		if result.RowsAffected == 0 {
@@ -322,4 +304,8 @@ func AddDefaultOnClientUUID(uuid string) error {
 
 func GetPingRecords(uuid string, taskId int, start, end time.Time) ([]models.PingRecord, error) {
 	return metricstore.GetPingRecords(context.Background(), uuid, taskId, start, end)
+}
+
+func GetPingLossStats(uuid string, taskId int, start, end time.Time) (lost, total int, err error) {
+	return metricstore.GetPingLossStats(context.Background(), uuid, taskId, start, end)
 }

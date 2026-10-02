@@ -25,8 +25,6 @@ type PingTask struct {
 	LossThreshold        float64     `json:"loss_threshold" gorm:"not null;default:20"`
 	LossWindowMinutes    int         `json:"loss_window_minutes" gorm:"not null;default:5"`
 	LossClients          StringArray `json:"loss_clients" gorm:"type:longtext"`
-	LossAlertTemplate    string      `json:"loss_alert_template" gorm:"type:text"`
-	LossRecoveryTemplate string      `json:"loss_recovery_template" gorm:"type:text"`
 }
 
 // PingLossNotificationState stores debounce state for one task/client pair.
