@@ -57,7 +57,7 @@ func ingestPingResult(uuid string, taskID uint, value int) error {
 	go func() {
 		// The metric batcher may flush asynchronously; evaluate after the sample
 		// has had a chance to become queryable.
-		time.Sleep(3500 * time.Millisecond)
+		time.Sleep(5 * time.Second)
 		notifier.CheckPingLossNotification(record)
 	}()
 	return nil

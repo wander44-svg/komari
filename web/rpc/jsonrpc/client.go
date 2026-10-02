@@ -62,7 +62,7 @@ func clientUploadPingResult(ctx context.Context, req *rpc.JsonRpcRequest) (any, 
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to save ping result: "+err.Error(), nil)
 	}
 	go func() {
-		time.Sleep(3500 * time.Millisecond)
+		time.Sleep(5 * time.Second)
 		notifier.CheckPingLossNotification(record)
 	}()
 	return map[string]any{"status": "success"}, nil

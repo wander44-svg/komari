@@ -22,9 +22,9 @@ const (
 
 var pingLossMu sync.Mutex
 
-// CheckPingLossNotification evaluates one newly received result. The five
-// minute window is configurable per task; two consecutive decisions are
-// required on both edges to suppress one-off probe failures.
+// CheckPingLossNotification evaluates one newly received result. The window
+// is configurable per task; the persisted AlertActive state suppresses
+// repeated alerts until the window falls back below the configured threshold.
 func CheckPingLossNotification(record models.PingRecord) {
 	if record.Client == "" || record.TaskId == 0 {
 		return
@@ -81,14 +81,14 @@ func CheckPingLossNotification(record models.PingRecord) {
 	if lossRate >= threshold {
 		state.AboveCount++
 		state.BelowCount = 0
-		if !state.AlertActive && state.AboveCount >= 2 {
+		if !state.AlertActive {
 			state.AlertActive = true
 			eventName, emoji, thresholdText = messageevent.PacketLoss, "⚠️", strconv.FormatFloat(threshold, 'f', -1, 64)+"%"
 		}
 	} else {
 		state.BelowCount++
 		state.AboveCount = 0
-		if state.AlertActive && state.BelowCount >= 2 {
+		if state.AlertActive {
 			state.AlertActive = false
 			eventName, emoji = messageevent.PacketLossRecovered, "✅"
 		}
