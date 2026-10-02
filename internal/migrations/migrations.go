@@ -30,7 +30,7 @@ type legacyModelConfig struct {
 	DisablePasswordLogin       bool    `json:"disable_password_login" gorm:"default:false"`
 	NotificationEnabled        bool    `json:"notification_enabled" gorm:"default:false"`
 	NotificationMethod         string  `json:"notification_method" gorm:"type:varchar(64);default:'none'"`
-	NotificationTemplate       string  `json:"notification_template" gorm:"type:longtext;default:'{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\n{{threshold_line}}Time: {{time}}'"`
+	NotificationTemplate       string  `json:"notification_template" gorm:"type:longtext;default:'{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\n{{threshold_line}}\nTime: {{time}}'"`
 	ExpireNotificationEnabled  bool    `json:"expire_notification_enabled" gorm:"default:false"`
 	ExpireNotificationLeadDays int     `json:"expire_notification_lead_days" gorm:"default:7"`
 	LoginNotification          bool    `json:"login_notification" gorm:"default:false"`
@@ -153,7 +153,7 @@ func updateDefaultNotificationTemplate(db *gorm.DB) error {
 		return nil
 	}
 	oldTemplate := "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\nTime: {{time}}"
-	newTemplate := "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\n{{threshold_line}}Time: {{time}}"
+	newTemplate := "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\n{{threshold_line}}\nTime: {{time}}"
 	oldJSON, err := json.Marshal(oldTemplate)
 	if err != nil {
 		return err
@@ -162,9 +162,15 @@ func updateDefaultNotificationTemplate(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	return db.Model(&appconfig.ConfigItem{}).
-		Where("key = ? AND value = ?", appconfig.NotificationTemplateKey, string(oldJSON)).
-		Update("value", string(newJSON)).Error
+	intermediateTemplate := "{{emoji}}\nEvent: {{event}}\nClients: {{client}}\nMessage: {{message}}\n{{threshold_line}}Time: {{time}}"
+	intermediateJSON, err := json.Marshal(intermediateTemplate)
+	if err != nil {
+		return err
+	}
+	result := db.Model(&appconfig.ConfigItem{}).
+		Where("key = ? AND value IN ?", appconfig.NotificationTemplateKey, []string{string(oldJSON), string(intermediateJSON)}).
+		Update("value", string(newJSON))
+	return result.Error
 }
 
 // dropRemovedFeatureTables removes tables that belonged exclusively to
