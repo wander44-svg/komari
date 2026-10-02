@@ -1,9 +1,13 @@
 package accounts
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/komari-monitor/komari/database/dbcore"
@@ -23,6 +27,35 @@ func GetAllSessions() (sessions []models.Session, err error) {
 		return nil, err
 	}
 	return sessions, nil
+}
+
+// PublicSessionID returns a non-secret identifier suitable for displaying a
+// session in the admin UI. It is intentionally not the bearer token stored in
+// the HttpOnly cookie and cannot be used for authentication.
+func PublicSessionID(session string) string {
+	digest := sha256.Sum256([]byte(session))
+	return hex.EncodeToString(digest[:])
+}
+
+// DeleteSessionByPublicID removes a session using its non-secret UI identifier
+// without exposing the bearer token to the browser. Session tables are small
+// and this scan keeps the existing schema/data migration-free.
+func DeleteSessionByPublicID(publicID string) error {
+	publicID = strings.TrimSpace(publicID)
+	if publicID == "" {
+		return errors.New("session id is required")
+	}
+	sessions, err := GetAllSessions()
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		candidate := PublicSessionID(session.Session)
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(publicID)) == 1 {
+			return DeleteSession(session.Session)
+		}
+	}
+	return errors.New("session not found")
 }
 
 // CreateSession 创建新会话

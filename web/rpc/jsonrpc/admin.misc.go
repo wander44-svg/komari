@@ -34,11 +34,11 @@ func init() {
 	RegisterWithGroupAndMeta("getSessions", rpc.RoleAdmin, adminGetSessions, &rpc.MethodMeta{
 		Name:    "admin:getSessions",
 		Summary: "List all login sessions",
-		Returns: "{ current: string, data: Session[] }",
+		Returns: "{ current_id: string, data: SessionView[] }",
 	})
 	RegisterWithGroupAndMeta("deleteSession", rpc.RoleAdmin, adminDeleteSession, &rpc.MethodMeta{
 		Name:    "admin:deleteSession",
-		Summary: "Delete a session by token",
+		Summary: "Delete a session by public identifier",
 		Returns: "null",
 	})
 	RegisterWithGroupAndMeta("deleteAllSessions", rpc.RoleAdmin, adminDeleteAllSessions, &rpc.MethodMeta{
@@ -75,20 +75,47 @@ func adminGetSessions(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.Jso
 	}
 	current := ""
 	if meta := rpc.MetaFromContext(ctx); meta != nil {
-		current = meta.SessionToken
+		current = accounts.PublicSessionID(meta.SessionToken)
 	}
-	return map[string]any{"current": current, "data": ss}, nil
+	type sessionView struct {
+		ID              string    `json:"id"`
+		UUID            string    `json:"uuid"`
+		UserAgent       string    `json:"user_agent"`
+		IP              string    `json:"ip"`
+		LoginMethod     string    `json:"login_method"`
+		LatestOnline    time.Time `json:"latest_online"`
+		LatestUserAgent string    `json:"latest_user_agent"`
+		LatestIP        string    `json:"latest_ip"`
+		Expires         time.Time `json:"expires"`
+		CreatedAt       time.Time `json:"created_at"`
+	}
+	views := make([]sessionView, 0, len(ss))
+	for _, session := range ss {
+		views = append(views, sessionView{
+			ID:              accounts.PublicSessionID(session.Session),
+			UUID:            session.UUID,
+			UserAgent:       session.UserAgent,
+			IP:              session.Ip,
+			LoginMethod:     session.LoginMethod,
+			LatestOnline:    session.LatestOnline,
+			LatestUserAgent: session.LatestUserAgent,
+			LatestIP:        session.LatestIp,
+			Expires:         session.Expires,
+			CreatedAt:       session.CreatedAt,
+		})
+	}
+	return map[string]any{"current_id": current, "data": views}, nil
 }
 
 func adminDeleteSession(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	var params struct {
-		Session string `json:"session"`
+		SessionID string `json:"session_id"`
 	}
 	req.BindParams(&params)
-	if params.Session == "" {
-		return nil, rpc.MakeError(rpc.InvalidParams, "session is required", nil)
+	if params.SessionID == "" {
+		return nil, rpc.MakeError(rpc.InvalidParams, "session_id is required", nil)
 	}
-	if err := accounts.DeleteSession(params.Session); err != nil {
+	if err := accounts.DeleteSessionByPublicID(params.SessionID); err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to delete session: "+err.Error(), nil)
 	}
 	actor, ip := auditActor(ctx)

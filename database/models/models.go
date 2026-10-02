@@ -58,7 +58,7 @@ type User struct {
 // Session manages user sessions
 type Session struct {
 	UUID            string    `json:"uuid" gorm:"type:varchar(36)"`
-	Session         string    `json:"session" gorm:"type:varchar(255);primaryKey;uniqueIndex:idx_sessions_session;not null"`
+	Session         string    `json:"-" gorm:"type:varchar(255);primaryKey;uniqueIndex:idx_sessions_session;not null"`
 	UserAgent       string    `json:"user_agent" gorm:"type:text"`
 	Ip              string    `json:"ip" gorm:"type:varchar(100)"`
 	LoginMethod     string    `json:"login_method" gorm:"type:varchar(50)"`
