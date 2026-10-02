@@ -581,7 +581,7 @@ func UpdateTheme(c *gin.Context) {
 	// 4. 用户提供的GitHub仓库信息，获取最新release下载
 
 	// 临时文件名
-	tempFile, err := writeThemeTempFile("komari-theme-update-")
+	tempFile, err := writeThemeTempFile("komari-theme-update-", themeData)
 	if err != nil {
 		api.RespondError(c, http.StatusInternalServerError, "保存文件失败: "+err.Error())
 		return
@@ -702,7 +702,7 @@ func ImportTheme(c *gin.Context) {
 	}
 
 	// 保存到临时文件
-	tempFile, err := writeThemeTempFile("komari-theme-import-")
+	tempFile, err := writeThemeTempFile("komari-theme-import-", themeData)
 	if err != nil {
 		api.RespondError(c, http.StatusInternalServerError, "保存文件失败: "+err.Error())
 		return
