@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -64,7 +65,7 @@ func CheckPingLossNotification(record models.PingRecord) {
 		now = time.Now().UTC()
 	}
 	lost, total, err := tasks.GetPingLossStats(record.Client, int(record.TaskId), now.Add(-time.Duration(windowMinutes)*time.Minute), now.Add(time.Second))
-	if err != nil || total < 3 {
+	if err != nil || total < minimumLossSamples(windowMinutes, task.Interval) {
 		return
 	}
 	lossRate := float64(lost) * 100 / float64(total)
@@ -110,6 +111,28 @@ func CheckPingLossNotification(record models.PingRecord) {
 	}); err != nil {
 		logger.Errorf("notifier", "Failed to send ping loss notification for task %d/client %s: %v", task.Id, record.Client, err)
 	}
+}
+
+// minimumLossSamples derives the smallest useful sample set from the task's
+// window and probe interval. A normal five-minute/60-second task keeps the
+// conservative three-sample floor; short windows are allowed to operate with
+// two samples, but never with one sample (which would turn one failure into a
+// misleading 100% alert).
+func minimumLossSamples(windowMinutes, intervalSeconds int) int {
+	if windowMinutes <= 0 {
+		windowMinutes = defaultLossWindow
+	}
+	if intervalSeconds <= 0 {
+		intervalSeconds = 60
+	}
+	expected := int(math.Ceil(float64(windowMinutes*60) / float64(intervalSeconds)))
+	if expected < 2 {
+		return 2
+	}
+	if expected < 3 {
+		return expected
+	}
+	return 3
 }
 
 func containsString(values models.StringArray, target string) bool {
