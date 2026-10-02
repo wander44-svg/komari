@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -308,62 +307,31 @@ func isValidMarketShort(short string) bool {
 	return true
 }
 
-// downloadThemeFromURL 从URL下载主题文件
-// isPrivateIP checks if the resolved IP addresses are private/internal
-func isPrivateIP(host string) bool {
-	ips, err := net.LookupHost(host)
-	if err != nil {
-		return true // fail closed
-	}
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip == nil {
-			continue
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return true
-		}
-	}
-	return false
+// downloadThemeFromURL keeps ordinary theme import/update on the same bounded,
+// timeout-limited, redirect-validated downloader used by the theme market.
+func downloadThemeFromURL(rawURL string) ([]byte, error) {
+	return downloadMarketURL(rawURL, marketPackageMaxSize)
 }
 
-func downloadThemeFromURL(rawURL string) ([]byte, error) {
-	// SSRF protection: block requests to private/internal IPs
-	parsedURL, err := url.Parse(rawURL)
+func writeThemeTempFile(prefix string, data []byte) (string, error) {
+	tempFile, err := os.CreateTemp("", prefix+"*.zip")
 	if err != nil {
-		return nil, fmt.Errorf("invalid URL: %v", err)
+		return "", err
 	}
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return nil, fmt.Errorf("only http and https schemes are allowed")
+	tempPath := tempFile.Name()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	if _, err = tempFile.Write(data); err != nil {
+		_ = tempFile.Close()
+		return "", err
 	}
-	if isPrivateIP(parsedURL.Hostname()) {
-		return nil, fmt.Errorf("requests to private/internal addresses are not allowed")
+	if err = tempFile.Close(); err != nil {
+		return "", err
 	}
-
-	// 发送HTTP GET请求
-	resp, err := http.Get(rawURL)
-	if err != nil {
-		return nil, fmt.Errorf("下载主题文件失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态码
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("下载主题文件失败，HTTP状态码: %d", resp.StatusCode)
-	}
-
-	// 读取响应内容
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取主题文件内容失败: %v", err)
-	}
-
-	// 检查文件大小
-	if len(data) == 0 {
-		return nil, errors.New("下载的主题文件为空")
-	}
-
-	return data, nil
+	return tempPath, nil
 }
 
 // getGitHubReleaseDownloadURL 从GitHub API获取最新release的下载链接
@@ -613,8 +581,8 @@ func UpdateTheme(c *gin.Context) {
 	// 4. 用户提供的GitHub仓库信息，获取最新release下载
 
 	// 临时文件名
-	tempFile := filepath.Join(os.TempDir(), "downloaded_theme.zip")
-	if err := os.WriteFile(tempFile, themeData, 0644); err != nil {
+	tempFile, err := writeThemeTempFile("komari-theme-update-")
+	if err != nil {
 		api.RespondError(c, http.StatusInternalServerError, "保存文件失败: "+err.Error())
 		return
 	}
@@ -734,8 +702,8 @@ func ImportTheme(c *gin.Context) {
 	}
 
 	// 保存到临时文件
-	tempFile := filepath.Join(os.TempDir(), "import_theme.zip")
-	if err := os.WriteFile(tempFile, themeData, 0644); err != nil {
+	tempFile, err := writeThemeTempFile("komari-theme-import-")
+	if err != nil {
 		api.RespondError(c, http.StatusInternalServerError, "保存文件失败: "+err.Error())
 		return
 	}

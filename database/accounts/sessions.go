@@ -83,13 +83,14 @@ func GetSession(session string) (uuid string, err error) {
 }
 
 func GetUserBySession(session string) (models.User, error) {
-	db := dbcore.GetDBInstance()
-	var sessionRecord models.Session
-	err := db.Where("session = ?", session).First(&sessionRecord).Error
+	// Keep this lookup in lockstep with GetSession so callers cannot treat an
+	// expired session as an authenticated user. GetSession also removes expired
+	// rows, which keeps the session table from accumulating stale credentials.
+	uuid, err := GetSession(session)
 	if err != nil {
 		return models.User{}, err
 	}
-	return GetUserByUUID(sessionRecord.UUID)
+	return GetUserByUUID(uuid)
 }
 
 // DeleteSession 删除指定会话

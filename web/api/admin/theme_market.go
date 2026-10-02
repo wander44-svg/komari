@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -473,6 +475,12 @@ func downloadMarketURL(rawURL string, maxSize int64) ([]byte, error) {
 	}
 	client := &http.Client{
 		Timeout: 45 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			DialContext:           dialPublicHTTPContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return errors.New("too many redirects")
@@ -499,6 +507,51 @@ func downloadMarketURL(rawURL string, maxSize int64) ([]byte, error) {
 		return nil, errors.New("empty response")
 	}
 	return data, nil
+}
+
+// isPrivateIP fails closed for loopback, link-local, multicast, unspecified,
+// and RFC1918/private addresses. It is used both before the request and again
+// by the dialer so a DNS rebinding cannot change the destination after the
+// initial validation.
+func isPrivateIP(host string) bool {
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return true
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+			return true
+		}
+	}
+	return false
+}
+
+func dialPublicHTTPContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return nil, fmt.Errorf("unable to resolve public host %q", host)
+	}
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+			continue
+		}
+		conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if dialErr == nil {
+			return conn, nil
+		}
+		err = dialErr
+	}
+	if err == nil {
+		err = errors.New("host resolved only to private addresses")
+	}
+	return nil, err
 }
 
 func invalidateThemeMarketCache(rawURL string) {
