@@ -64,7 +64,10 @@ func CheckPingLossNotification(record models.PingRecord) {
 		now = time.Now().UTC()
 	}
 	lost, total, err := tasks.GetPingLossStats(record.Client, int(record.TaskId), now.Add(-time.Duration(windowMinutes)*time.Minute), now.Add(time.Second))
-	if err != nil || total < 2 {
+	// Use the samples that actually arrived in the configured window. A window
+	// with no samples cannot produce an alert; one received sample is still a
+	// valid denominator, so a lost sample represents 100% loss as configured.
+	if err != nil || total < 1 {
 		return
 	}
 	lossRate := float64(lost) * 100 / float64(total)
