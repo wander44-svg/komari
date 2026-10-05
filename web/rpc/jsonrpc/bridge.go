@@ -28,9 +28,14 @@ const (
 type bindConfig struct {
 	render      renderKind
 	successMsg  string
+	noStore     bool
 	pathParams  []string // 合并到参数对象的路径参数名
 	queryParams []string // 合并到参数对象的查询参数名
 }
+
+// WithNoStore marks a JSON endpoint as user-specific, mutable state that must
+// not be served from a browser or service-worker cache.
+func WithNoStore() BindOption { return func(c *bindConfig) { c.noStore = true } }
 
 // BindOption 配置 Bind 行为。
 type BindOption func(*bindConfig)
@@ -63,6 +68,11 @@ func Bind(method string, opts ...BindOption) gin.HandlerFunc {
 		o(cfg)
 	}
 	return func(c *gin.Context) {
+		if cfg.noStore {
+			c.Header("Cache-Control", "no-store")
+			c.Header("Pragma", "no-cache")
+			c.Header("Expires", "0")
+		}
 		params, ok := assembleParams(c, cfg)
 		if !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid or missing request body"})
