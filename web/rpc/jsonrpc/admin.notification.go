@@ -144,17 +144,41 @@ func adminEditOfflineNotification(_ context.Context, req *rpc.JsonRpcRequest) (a
 		}
 	}
 	db := dbcore.GetDBInstance()
-	// Use the same explicit-column upsert path for both existing and new rows.
-	// Selecting enable is important: false is a meaningful value here and must
-	// not be replaced by the model's default:true when the row is first created.
-	if err := db.Model(&models.OfflineNotification{}).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "client"}},
-			DoUpdates: clause.AssignmentColumns([]string{"enable", "grace_period"}),
-		}).
-		Select("client", "enable", "grace_period").
-		Create(notifications).Error; err != nil {
-		return nil, rpc.MakeError(rpc.InternalError, "Failed to edit offline notifications: "+err.Error(), nil)
+	for _, noti := range notifications {
+		values := map[string]any{
+			"enable":       noti.Enable,
+			"grace_period": noti.GracePeriod,
+		}
+		result := db.Model(&models.OfflineNotification{}).
+			Where("client = ?", noti.Client).
+			Updates(values)
+		if result.Error != nil {
+			return nil, rpc.MakeError(rpc.InternalError, "Failed to edit offline notifications: "+result.Error.Error(), nil)
+		}
+		if result.RowsAffected > 0 {
+			continue
+		}
+
+		// The row does not exist yet. Create with an explicit map so false is
+		// written instead of being replaced by the model default:true.
+		createErr := db.Model(&models.OfflineNotification{}).Create(map[string]any{
+			"client":       noti.Client,
+			"enable":       noti.Enable,
+			"grace_period": noti.GracePeriod,
+		}).Error
+		if createErr == nil {
+			continue
+		}
+
+		// A concurrent creator may have won the race. Retry the explicit update
+		// so the requested value is still authoritative.
+		retry := db.Model(&models.OfflineNotification{}).
+			Where("client = ?", noti.Client).
+			Updates(values)
+		if retry.Error != nil {
+			retryErr := retry.Error
+			return nil, rpc.MakeError(rpc.InternalError, "Failed to edit offline notifications: "+retryErr.Error(), nil)
+		}
 	}
 	return nil, nil
 }
