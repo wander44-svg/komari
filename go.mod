@@ -1,6 +1,6 @@
 module github.com/komari-monitor/komari
 
-go 1.25.0
+go 1.27.3
 
 require (
 	github.com/gin-gonic/gin v1.10.0
@@ -15,18 +15,13 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.33.0
+	// Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto #1
+	// golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange #3
+	golang.org/x/crypto v0.39.0
+	golang.org/x/sync v0.19.0
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.26.1
 )
-
-// Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto #1
-// golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange #3
-require golang.org/x/crypto v0.39.0
-
-// HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net #2
-// golang.org/x/net vulnerable to Cross-site Scripting #4
-require golang.org/x/net v0.41.0 // indirect
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -35,16 +30,13 @@ require (
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -65,8 +57,11 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.15.0 // indirect
-	golang.org/x/sync v0.19.0
-	golang.org/x/text v0.33.0
+	// HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net #2
+	// golang.org/x/net vulnerable to Cross-site Scripting #4
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
